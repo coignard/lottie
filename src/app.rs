@@ -1422,7 +1422,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             );
         }
         AppMode::PromptSave => {
-            let prompt_str = "Save modified buffer?";
+            let prompt_str = "Save modified script?";
             let status_padded =
                 format!("{:<width$}", prompt_str, width = status_area.width as usize);
             f.render_widget(

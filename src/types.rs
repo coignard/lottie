@@ -18,7 +18,7 @@
 use crate::config::Config;
 use ratatui::style::{Color, Modifier, Style};
 
-pub const PAGE_WIDTH: u16 = 61;
+pub const PAGE_WIDTH: u16 = 60;
 pub const LINES_PER_PAGE: usize = 55;
 
 #[derive(Clone, Copy)]
@@ -33,17 +33,17 @@ impl Fmt {
     }
 }
 
-pub const FMT_ACTION: Fmt = Fmt::new(0, 61);
-pub const FMT_SCENE: Fmt = Fmt::new(0, 61);
+pub const FMT_ACTION: Fmt = Fmt::new(0, 60);
+pub const FMT_SCENE: Fmt = Fmt::new(0, 60);
 pub const FMT_CHARACTER: Fmt = Fmt::new(20, 38);
 pub const FMT_DIALOGUE: Fmt = Fmt::new(11, 35);
 pub const FMT_PAREN: Fmt = Fmt::new(16, 31);
-pub const FMT_TRANSITION: Fmt = Fmt::new(0, 61);
-pub const FMT_CENTERED: Fmt = Fmt::new(0, 61);
-pub const FMT_LYRICS: Fmt = Fmt::new(0, 61);
-pub const FMT_SECTION: Fmt = Fmt::new(0, 61);
-pub const FMT_SYNOPSIS: Fmt = Fmt::new(0, 61);
-pub const FMT_NOTE: Fmt = Fmt::new(0, 61);
+pub const FMT_TRANSITION: Fmt = Fmt::new(0, 60);
+pub const FMT_CENTERED: Fmt = Fmt::new(0, 60);
+pub const FMT_LYRICS: Fmt = Fmt::new(0, 60);
+pub const FMT_SECTION: Fmt = Fmt::new(0, 60);
+pub const FMT_SYNOPSIS: Fmt = Fmt::new(0, 60);
+pub const FMT_NOTE: Fmt = Fmt::new(0, 60);
 pub const FMT_METADATA_KEY: Fmt = Fmt::new(10, 51);
 pub const FMT_METADATA_VAL: Fmt = Fmt::new(12, 49);
 pub const FMT_METADATA_TITLE: Fmt = Fmt::new(10, 51);
@@ -168,7 +168,7 @@ mod types_tests {
     fn test_fmt_dimensions_action() {
         let fmt = LineType::Action.fmt();
         assert_eq!(fmt.indent, 0);
-        assert_eq!(fmt.width, 61);
+        assert_eq!(fmt.width, 60);
     }
 
     #[test]

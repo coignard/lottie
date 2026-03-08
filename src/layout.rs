@@ -415,39 +415,99 @@ pub fn build_layout(
         let mut logical_rows = Vec::new();
 
         for token in tokens {
-            let token_plain = token.replace("**", "").replace(['*', '_'], "");
-            let token_w = UnicodeWidthStr::width(token_plain.as_str()) as u16;
-            let cur_plain = current_line.replace("**", "").replace(['*', '_'], "");
-            let cur_w = UnicodeWidthStr::width(cur_plain.as_str()) as u16;
+            let mut remaining_token = token;
 
-            let is_just_space = token.trim().is_empty();
+            while !remaining_token.is_empty() {
+                let token_plain = remaining_token.replace("**", "").replace(['*', '_'], "");
+                let token_w = UnicodeWidthStr::width(token_plain.as_str()) as u16;
+                let cur_plain = current_line.replace("**", "").replace(['*', '_'], "");
+                let cur_w = UnicodeWidthStr::width(cur_plain.as_str()) as u16;
 
-            if !current_line.is_empty() && cur_w + token_w > fmt_rules.width && !is_just_space {
-                let disp_char_len = current_line.chars().count();
-                let raw_start = sigil_left + row_disp_start;
-                let raw_end = raw_start + disp_char_len;
-                let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
+                let is_just_space = remaining_token.trim().is_empty();
 
-                logical_rows.push(VisualRow {
-                    line_idx: i,
-                    char_start: raw_start,
-                    char_end: raw_end,
-                    raw_text: current_line.clone(),
-                    line_type: lt,
-                    indent: current_indent,
-                    is_active,
-                    scene_num,
-                    page_num: None,
-                    override_color: line_override_color,
-                    fmt: format_data.clone(),
-                    is_phantom: false,
-                });
-                row_disp_start += disp_char_len;
-                current_line.clear();
-                scene_num = None;
-                current_line.push_str(token.trim_start());
-            } else {
-                current_line.push_str(&token);
+                if !current_line.is_empty() && cur_w + token_w > fmt_rules.width && !is_just_space {
+                    let disp_char_len = current_line.chars().count();
+                    let raw_start = sigil_left + row_disp_start;
+                    let raw_end = raw_start + disp_char_len;
+                    let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
+
+                    let trimmed = remaining_token.trim_start();
+                    let trimmed_chars = remaining_token.chars().count() - trimmed.chars().count();
+
+                    logical_rows.push(VisualRow {
+                        line_idx: i,
+                        char_start: raw_start,
+                        char_end: raw_end,
+                        raw_text: current_line.clone(),
+                        line_type: lt,
+                        indent: current_indent,
+                        is_active,
+                        scene_num,
+                        page_num: None,
+                        override_color: line_override_color,
+                        fmt: format_data.clone(),
+                        is_phantom: false,
+                    });
+                    row_disp_start += disp_char_len + trimmed_chars;
+                    current_line.clear();
+                    scene_num = None;
+                    remaining_token = trimmed.to_string();
+                    continue;
+                }
+
+                if current_line.is_empty() && token_w > fmt_rules.width {
+                    let mut chars_to_take = 0;
+                    let t_chars: Vec<char> = remaining_token.chars().collect();
+                    for (k, _) in t_chars.iter().enumerate() {
+                        let test_str: String = t_chars[..=k].iter().collect();
+                        let test_plain = test_str.replace("**", "").replace(['*', '_'], "");
+                        let w = UnicodeWidthStr::width(test_plain.as_str()) as u16;
+                        if w > fmt_rules.width {
+                            if chars_to_take == 0 {
+                                chars_to_take = 1;
+                            }
+                            break;
+                        }
+                        chars_to_take = k + 1;
+                    }
+
+                    while chars_to_take < t_chars.len() && t_chars[chars_to_take].is_whitespace() {
+                        chars_to_take += 1;
+                    }
+
+                    let part1: String = t_chars[..chars_to_take].iter().collect();
+                    let part2: String = t_chars[chars_to_take..].iter().collect();
+
+                    current_line.push_str(&part1);
+
+                    let disp_char_len = current_line.chars().count();
+                    let raw_start = sigil_left + row_disp_start;
+                    let raw_end = raw_start + disp_char_len;
+                    let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
+
+                    logical_rows.push(VisualRow {
+                        line_idx: i,
+                        char_start: raw_start,
+                        char_end: raw_end,
+                        raw_text: current_line.clone(),
+                        line_type: lt,
+                        indent: current_indent,
+                        is_active,
+                        scene_num,
+                        page_num: None,
+                        override_color: line_override_color,
+                        fmt: format_data.clone(),
+                        is_phantom: false,
+                    });
+                    row_disp_start += disp_char_len;
+                    current_line.clear();
+                    scene_num = None;
+
+                    remaining_token = part2;
+                } else {
+                    current_line.push_str(&remaining_token);
+                    break;
+                }
             }
         }
 
@@ -805,5 +865,41 @@ mod layout_tests {
             .collect();
 
         assert_eq!(action_rows[0].page_num, Some(2));
+    }
+
+    #[test]
+    fn test_layout_hard_wrap_long_word() {
+        let config = Config::default();
+
+        let long_action = "A".repeat(100);
+
+        let layout = build_layout(&[long_action], &[LineType::Action], 99, &config);
+
+        let rows: Vec<_> = layout.into_iter().filter(|r| !r.is_phantom).collect();
+
+        assert_eq!(rows.len(), 2, "Line was not hard-wrapped correctly");
+
+        assert_eq!(rows[0].char_start, 0);
+        assert_eq!(rows[0].char_end, 60);
+        assert_eq!(rows[1].char_start, 60);
+        assert_eq!(rows[1].char_end, 100);
+
+        assert_eq!(rows[0].raw_text, "A".repeat(60));
+        assert_eq!(rows[1].raw_text, "A".repeat(40));
+    }
+
+    #[test]
+    fn test_layout_hard_wrap_with_markup() {
+        let config = Config::default();
+
+        let long_action = format!("**{}**", "A".repeat(100));
+
+        let layout = build_layout(&[long_action], &[LineType::Action], 99, &config);
+
+        let rows: Vec<_> = layout.into_iter().filter(|r| !r.is_phantom).collect();
+        assert_eq!(rows.len(), 2);
+
+        assert_eq!(rows[0].raw_text, format!("**{}", "A".repeat(60)));
+        assert_eq!(rows[1].raw_text, format!("{}**", "A".repeat(40)));
     }
 }
