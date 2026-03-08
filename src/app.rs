@@ -1373,7 +1373,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Paragraph::new(visible), text_area);
 
-    let app_version = option_env!("CARGO_PKG_VERSION").unwrap_or("0.1.0");
+    let app_version = option_env!("CARGO_PKG_VERSION").unwrap_or("0.1.1");
     let left_text = format!("  lottie {}", app_version);
     let right_text = if app.dirty { "Modified  " } else { "  " };
     let center_text = app
@@ -1992,7 +1992,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.1.0
+Draft date: Version 0.1.1
 Contact:
 contact@renecoignard.com
 
