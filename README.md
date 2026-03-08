@@ -96,7 +96,7 @@ set show_page_numbers
 set hide_markup
 
 # Typewriter mode
-set typewriter_mode
+unset typewriter_mode
 
 ## Editor Behavior
 
