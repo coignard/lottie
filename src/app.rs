@@ -1243,7 +1243,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let (vis_row, vis_x) = find_visual_cursor(&app.layout, app.cursor_y, app.cursor_x);
 
     if app.config.typewriter_mode {
-        let center_offset = height / 2;
+        let absolute_center = area.height / 2;
+        let center_offset = absolute_center.saturating_sub(text_area.y) as usize;
         app.scroll = vis_row.saturating_sub(center_offset);
     } else {
         if vis_row < app.scroll {
@@ -1373,7 +1374,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Paragraph::new(visible), text_area);
 
-    let app_version = option_env!("CARGO_PKG_VERSION").unwrap_or("0.1.1");
+    let app_version = env!("CARGO_PKG_VERSION");
     let left_text = format!("  lottie {}", app_version);
     let right_text = if app.dirty { "Modified  " } else { "  " };
     let center_text = app
