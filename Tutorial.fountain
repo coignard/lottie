@@ -1,0 +1,93 @@
+Title: Lottie Tutorial
+Credit: Written by
+Author: René Coignard
+Draft date: Version 0.1.0
+Contact:
+contact@renecoignard.com
+
+INT. FLAT IN WOLFEN-NORD - DAY
+
+RENÉ sits at his desk, typing.
+
+RENÉ
+(turning round)
+Oh, hello there. It seems you've found my terminal Rust port of Beat. Sit back and I'll show you how everything works.
+
+I sometimes write screenplays on my Gentoo laptop, and doing it in plain nano isn't terribly comfortable (I work entirely in the terminal there). So I decided to put this port of Beat together. I used Beat's source code as a reference when writing Lottie, so things work more or less the same way.
+
+As you may have already noticed, the navigation is rather reminiscent of nano, because I did look at its source code and took inspiration, for the sake of authenticity. I'm rather fond of it, and I hope you will be too. Not quite as nerdy as vim, but honestly, I'm an average nano enjoyer and I'm not ashamed of it.
+
+Anyway, let's get into it.
+
+EXT. NORDPARK - DAY
+
+As I mentioned, things work much the same as in Beat. If you start a line with **int.** or **ext.**, Lottie will automatically turn it into a scene heading. You can also use tab: on an empty line, it will first turn it into a character cue, then a scene heading, and then a transition. If you simply start typing IN CAPS ON AN EMPTY LINE, LIKE SO, the text will automatically become a character cue.
+
+You can also use notes:
+
+/* Two sailors are walking along the deck, when one turns to the other and says: */
+
+SAILOR
+I'm not a sailor, actually.
+
+Lottie automatically inserts two blank lines after certain elements, just as Beat does, though this can be adjusted in the configuration file. There's a sample config in the repository; do make use of it. Bonus: try enabling typewriter mode and see what happens.
+
+To create a transition, simply write in capitals and end with a colon, like so:
+
+CUT TO:
+
+That alone is quite enough to write a proper screenplay. But there's more! For instance, we also have these:
+
+/*
+
+A multi-line comment.
+
+For very, very, very long notes.
+
+*/
+
+[[Comments can look like this as well. They don't differ much from other comment types, since, as I've said, there's no renderer. But for compatibility with Beat, all the same comment types are supported.]]
+
+# This is a new section
+
+= And this is a synopsis.
+
+INT. EDEKA - EVENING
+
+Unlike Beat, there's no full render or PDF export here, but you can always save your screenplay and open it in Beat to do that. In Beat, synopses wouldn't appear in the rendered script, nor would comments. Which is why they share the same colour here, incidentally.
+
+As you may have noticed, there's support for **bold text**, *italics*, and even _underlined text_. When your cursor isn't on a line containing these markers, they'll be hidden from view. Move onto the line, and you'll see all the asterisks and underscores that produce the formatting.
+
+Centred text is supported as well, and works like this:
+
+>Centred text<
+
+You can also force transitions:
+
+>AN ABRUPT TRANSITION TO THE NEXT SCENE:
+
+EXT. WOLFEN(BITTERFELD) RAILWAY STATION - MORNING
+
+Lyrics are supported too, using a tilde at the start of the line:
+
+~Meine Damen, meine Herrn, danke
+~Dass Sie mit uns reisen
+~Zu abgefahrenen Preisen
+~Auf abgefahrenen Gleisen
+~Für Ihre Leidensfähigkeit, danken wir spontan
+~Sänk ju for träweling wis Deutsche Bahn
+
+That's Wise Guys. Onwards.
+
+EXT. LEIPZIG HBF - MORNING
+
+Well, do have a go on it, write something from scratch, or edit this screenplay. You might even turn up a bug or two; if so, please do let me know :-) Everything seemed to behave itself while I was putting this tutorial together, and I hope it all runs just as smoothly for you. I hope you enjoy working in Lottie.
+
+[[marker Speaking of which, I named the application after a certain Charlotte I once knew, who wrote quite wonderful screenplays.]]
+[[marker blue The colour of these comment markers can be changed, as you can see.]]
+
+You can find more information about the Fountain markup language at https://www.fountain.io/
+
+And Beat itself, of course: https://www.beat-app.fi/
+
+> FADE OUT

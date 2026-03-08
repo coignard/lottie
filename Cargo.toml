@@ -1,0 +1,29 @@
+[package]
+name = "lottie"
+version = "0.1.0"
+authors = [
+    "René Coignard <contact@renecoignard.com>"
+]
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Rust port of Beat, a simple and elegant screenwriting app"
+homepage = "https://coignard.org/lottie"
+repository = "https://github.com/coignard/lottie"
+readme = "README.md"
+keywords = ["fountain", "screenplay", "editor", "terminal", "tui"]
+categories = ["text-editors", "command-line-utilities"]
+exclude = [".github/*"]
+
+[dependencies]
+clap = { version = "4.5.60", features = ["derive"] }
+crossterm = "0.29"
+ratatui = "0.30"
+regex = "1.12.3"
+unicode-width = "0.2.2"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"
+opt-level = 3
