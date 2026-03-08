@@ -1,8 +1,10 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo.svg?raw=true">
-  <source media="(prefers-color-scheme: light)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo-dark.svg?raw=true">
-  <img src="assets/logo.svg" alt="Lottie Logo" height="48">
-</picture>
+<p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo.svg?raw=true">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo-dark.svg?raw=true">
+    <img src="assets/logo.svg" alt="Lottie Logo" height="38">
+  </picture>
+</p>
 
 [![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
 [![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
