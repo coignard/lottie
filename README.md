@@ -1,4 +1,9 @@
-# Lottie
+<img src="https://github.com/coignard/lottie/blob/main/assets/logo.svg?raw=true" alt="Lottie Logo" height="48">
+
+[![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
+[![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
+[![License: GPL-3.0-or-later](http://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
 
 A simple yet powerful screenwriting editor for the [Fountain](https://www.fountain.io/) plain-text screenplay format. Fast, lightweight, and built for writers who live in the terminal. Lottie is a Rust port of [Beat](https://www.beat-app.fi/), built with [ratatui](https://github.com/ratatui/ratatui).
 
@@ -6,7 +11,7 @@ A simple yet powerful screenwriting editor for the [Fountain](https://www.founta
 
 ## Install
 
-To download the source code, build the lottie binary, and install it in $HOME/.cargo/bin in one go run:
+To download the source code, build the lottie binary, and install it in `$HOME/.cargo/bin` in one go run:
 
 ```bash
 cargo install --locked --git https://github.com/coignard/lottie
