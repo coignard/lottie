@@ -1989,11 +1989,104 @@ mod app_tests {
     }
 
     #[test]
-    fn test_e2e_tutorial() {
+    fn test_app_auto_title_page_enabled() {
+        let mut cli = crate::config::Cli::default();
+        cli.auto_title_page = true;
+
+        let app = App::new(None, cli);
+        assert!(
+            app.lines.len() > 1,
+            "Title page should generate multiple lines"
+        );
+        assert_eq!(
+            app.lines[0], "Title: Untitled",
+            "First line must be Title metadata"
+        );
+        assert!(
+            app.dirty,
+            "App should be marked dirty after generating title page"
+        );
+    }
+
+    #[test]
+    fn test_app_auto_title_page_disabled() {
+        let cli = crate::config::Cli::default();
+
+        let app = App::new(None, cli);
+        assert_eq!(app.lines.len(), 1, "Should only have one line");
+        assert_eq!(app.lines[0], "", "Line should be empty");
+        assert!(!app.dirty, "App should NOT be dirty");
+    }
+
+    #[test]
+    fn test_app_autocomplete_disabled() {
+        let mut app = create_empty_app();
+        app.config.autocomplete = false;
+
+        app.lines = vec!["@CHA".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 4;
+        app.characters.insert("CHARLOTTE C.".to_string());
+
+        app.update_autocomplete();
+        assert_eq!(
+            app.suggestion, None,
+            "Suggestion should be None when disabled"
+        );
+    }
+
+    #[test]
+    fn test_app_match_parentheses_disabled() {
+        let mut app = create_empty_app();
+        app.config.match_parentheses = false;
+
+        app.insert_char('(');
+        assert_eq!(
+            app.lines[0], "(",
+            "Should only insert '(' without closing ')'"
+        );
+        assert_eq!(app.cursor_x, 1);
+    }
+
+    #[test]
+    fn test_app_close_elements_disabled() {
+        let mut app = create_empty_app();
+        app.config.close_elements = false;
+
+        app.insert_char('[');
+        app.insert_char('[');
+        assert_eq!(app.lines[0], "[[", "Should NOT insert ']]' automatically");
+        assert_eq!(app.cursor_x, 2);
+
+        app.lines = vec!["".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('/');
+        app.insert_char('*');
+        assert_eq!(app.lines[0], "/*", "Should NOT insert '*/' automatically");
+    }
+
+    #[test]
+    fn test_app_auto_paragraph_breaks_disabled() {
+        let mut app = create_empty_app();
+        app.config.auto_paragraph_breaks = false;
+
+        app.lines = vec!["Action line.".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_x = 12;
+
+        app.insert_newline(false);
+
+        assert_eq!(app.lines.len(), 2, "Should only insert 1 newline");
+        assert_eq!(app.lines[1], "");
+        assert_eq!(app.cursor_y, 1);
+    }
+
+    #[test]
+    fn test_e2e_tutorial_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.1.1
+Draft date: Version 0.1.3
 Contact:
 contact@renecoignard.com
 
@@ -2038,7 +2131,7 @@ For very, very, very long notes.
 
 */
 
-[[Comments can look like this as well. They don't differ much from other comment types, since, as I've said, there's no renderer. But for compatibility with Beat, all the same comment types are supported.]]
+[[Comments can look like this as well. They don't differ much from other comment types, but for compatibility with Beat, all the same comment types are supported.]]
 
 # This is a new section
 

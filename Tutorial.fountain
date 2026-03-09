@@ -1,7 +1,7 @@
 Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.1.1
+Draft date: Version 0.1.3
 Contact:
 contact@renecoignard.com
 
@@ -46,7 +46,7 @@ For very, very, very long notes.
 
 */
 
-[[Comments can look like this as well. They don't differ much from other comment types, since, as I've said, there's no renderer. But for compatibility with Beat, all the same comment types are supported.]]
+[[Comments can look like this as well. They don't differ much from other comment types, but for compatibility with Beat, all the same comment types are supported.]]
 
 # This is a new section
 

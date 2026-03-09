@@ -114,7 +114,6 @@ pub fn strip_sigils(raw: &str, lt: LineType) -> &str {
                 raw
             }
         }
-        LineType::MetadataValue => trimmed,
         _ => raw,
     }
 }
@@ -189,6 +188,8 @@ pub fn build_layout(
     let mut page_number = 1;
     let mut page_num_pending = true;
 
+    let mut active_note_color: Option<ratatui::style::Color> = None;
+
     for (i, (line, &lt)) in lines.iter().zip(types.iter()).enumerate() {
         let is_active = i == active_line;
         let mut scene_num = None;
@@ -198,22 +199,34 @@ pub fn build_layout(
         let format_data = parse_formatting(&raw_line);
 
         if lt == LineType::Note {
-            for j in 0..raw_line.chars().count() {
-                if let Some(c) = format_data.note_color.get(&j) {
-                    line_override_color = Some(*c);
-                    break;
-                }
+            if let Some(start) = raw_line.find("[[") {
+                let end_offset = raw_line[start..]
+                    .find("]]")
+                    .unwrap_or(raw_line.len() - start);
+                let content = &raw_line[start + 2..start + end_offset];
+                active_note_color = get_marker_color(content);
             }
-        } else if matches!(
-            lt,
-            LineType::SceneHeading | LineType::Section | LineType::Synopsis
-        ) && let Some(start) = raw_line.rfind("[[")
-        {
-            let end_offset = raw_line[start..]
-                .find("]]")
-                .unwrap_or(raw_line.len() - start);
-            let content = &raw_line[start + 2..start + end_offset];
-            line_override_color = get_marker_color(content);
+            line_override_color = active_note_color;
+
+            if let Some(end) = raw_line.rfind("]]")
+                && !raw_line[end..].contains("[[")
+            {
+                active_note_color = None;
+            }
+        } else {
+            active_note_color = None;
+
+            if matches!(
+                lt,
+                LineType::SceneHeading | LineType::Section | LineType::Synopsis
+            ) && let Some(start) = raw_line.rfind("[[")
+            {
+                let end_offset = raw_line[start..]
+                    .find("]]")
+                    .unwrap_or(raw_line.len() - start);
+                let content = &raw_line[start + 2..start + end_offset];
+                line_override_color = get_marker_color(content);
+            }
         }
 
         if matches!(lt, LineType::SceneHeading | LineType::Transition) {
@@ -232,19 +245,20 @@ pub fn build_layout(
             }
         }
 
-        if lt == LineType::SceneHeading && config.heading_spacing > 1 && i > 0 {
-            let mut empty_count = 0;
+        if lt == LineType::SceneHeading && config.heading_spacing > 0 && i > 0 {
+            let mut physical_empty_count = 0;
             let mut k = i;
             while k > 0 {
                 k -= 1;
                 if types[k] == LineType::Empty {
-                    empty_count += 1;
+                    physical_empty_count += 1;
                 } else {
                     break;
                 }
             }
-            if empty_count < config.heading_spacing {
-                let diff = config.heading_spacing - empty_count;
+
+            if physical_empty_count < config.heading_spacing {
+                let diff = config.heading_spacing - physical_empty_count;
                 for _ in 0..diff {
                     rows.push(VisualRow {
                         line_idx: i.saturating_sub(1),
@@ -305,12 +319,17 @@ pub fn build_layout(
         }
 
         if lt == LineType::PageBreak {
-            let rule = "─".repeat(PAGE_WIDTH as usize);
+            let display_text = if is_active {
+                raw_line.clone()
+            } else {
+                "─".repeat(PAGE_WIDTH as usize)
+            };
+
             rows.push(VisualRow {
                 line_idx: i,
                 char_start: 0,
-                char_end: rule.chars().count(),
-                raw_text: rule,
+                char_end: display_text.chars().count(),
+                raw_text: display_text,
                 line_type: lt,
                 indent: 0,
                 is_active,
@@ -658,7 +677,10 @@ mod layout_tests {
             strip_sigils("Title: Value", LineType::MetadataTitle),
             "Value"
         );
-        assert_eq!(strip_sigils(" Value", LineType::MetadataValue), "Value");
+        assert_eq!(
+            strip_sigils("   Value", LineType::MetadataValue),
+            "   Value"
+        );
     }
 
     #[test]
@@ -667,7 +689,7 @@ mod layout_tests {
         assert_eq!(sigil_left_chars("!!SHOT", LineType::Shot), 2);
         assert_eq!(sigil_left_chars(">CENTER<", LineType::Centered), 1);
         assert_eq!(sigil_left_chars("Title: Value", LineType::MetadataTitle), 7);
-        assert_eq!(sigil_left_chars("   Value", LineType::MetadataValue), 3);
+        assert_eq!(sigil_left_chars("   Value", LineType::MetadataValue), 0);
     }
 
     #[test]
@@ -688,11 +710,22 @@ mod layout_tests {
             show_scene_numbers: true,
             ..Config::default()
         };
-        let lines = vec!["INT. SCENE ONE".to_string(), "EXT. SCENE TWO".to_string()];
-        let types = vec![LineType::SceneHeading, LineType::SceneHeading];
+
+        let lines = vec![
+            "INT. SCENE ONE".to_string(),
+            "".to_string(),
+            "EXT. SCENE TWO".to_string(),
+        ];
+        let types = vec![
+            LineType::SceneHeading,
+            LineType::Empty,
+            LineType::SceneHeading,
+        ];
+
         let layout = build_layout(&lines, &types, 99, &config);
+
         assert_eq!(layout[0].scene_num, Some(1));
-        assert_eq!(layout[1].scene_num, Some(2));
+        assert_eq!(layout[2].scene_num, Some(2));
     }
 
     #[test]
@@ -901,5 +934,152 @@ mod layout_tests {
 
         assert_eq!(rows[0].raw_text, format!("**{}", "A".repeat(60)));
         assert_eq!(rows[1].raw_text, format!("{}**", "A".repeat(40)));
+    }
+
+    #[test]
+    fn test_layout_page_break_active_vs_inactive() {
+        let config = Config::default();
+        let lines = vec!["===".to_string()];
+        let types = vec![LineType::PageBreak];
+
+        let layout_inactive = build_layout(&lines, &types, 99, &config);
+        assert_eq!(layout_inactive[0].raw_text, "─".repeat(PAGE_WIDTH as usize));
+
+        let layout_active = build_layout(&lines, &types, 0, &config);
+        assert_eq!(layout_active[0].raw_text, "===");
+    }
+
+    #[test]
+    fn test_layout_show_scene_numbers_disabled() {
+        let mut config = Config::default();
+        config.show_scene_numbers = false;
+
+        let lines = vec!["INT. SCENE ONE".to_string()];
+        let types = vec![LineType::SceneHeading];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+        assert_eq!(
+            layout[0].scene_num, None,
+            "Scene number should be None when disabled"
+        );
+    }
+
+    #[test]
+    fn test_layout_show_page_numbers_disabled() {
+        let mut config = Config::default();
+        config.show_page_numbers = false;
+
+        let lines = vec!["Action line".to_string()];
+        let types = vec![LineType::Action];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+
+        assert_eq!(
+            layout[0].page_num, None,
+            "Page number should be None when disabled"
+        );
+    }
+
+    #[test]
+    fn test_layout_auto_contd_disabled() {
+        let mut config = Config::default();
+        config.auto_contd = false;
+
+        let lines = vec![
+            "CHARLOTTE".to_string(),
+            "Text".to_string(),
+            "".to_string(),
+            "CHARLOTTE".to_string(),
+        ];
+        let types = vec![
+            LineType::Character,
+            LineType::Dialogue,
+            LineType::Empty,
+            LineType::Character,
+        ];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+        assert_eq!(layout[0].raw_text, "CHARLOTTE");
+        assert_eq!(
+            layout[3].raw_text, "CHARLOTTE",
+            "Should NOT append (CONT'D) when disabled"
+        );
+    }
+
+    #[test]
+    fn test_layout_break_actions_enabled() {
+        let mut config = Config::default();
+        config.break_actions = true;
+
+        let mut lines = vec!["".to_string(); 54];
+        let mut types = vec![LineType::Empty; 54];
+
+        lines.push("A very long action that takes multiple visual lines on the screen because it exceeds the limit.".to_string());
+        types.push(LineType::Action);
+
+        let layout = build_layout(&lines, &types, 99, &config);
+
+        let action_rows: Vec<&VisualRow> = layout
+            .iter()
+            .filter(|r| r.line_type == LineType::Action)
+            .collect();
+
+        assert_eq!(
+            action_rows[0].page_num,
+            Some(1),
+            "First line of action should remain on page 1 when breaking is allowed"
+        );
+    }
+
+    #[test]
+    fn test_layout_smart_heading_spacing() {
+        let config = Config {
+            heading_spacing: 2,
+            ..Config::default()
+        };
+
+        let lines = vec![
+            "Action 1".to_string(),
+            "INT. SCENE 1".to_string(),
+            "Action 2".to_string(),
+            "".to_string(),
+            "INT. SCENE 2".to_string(),
+            "Action 3".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "INT. SCENE 3".to_string(),
+            "Action 4".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "INT. SCENE 4".to_string(),
+        ];
+
+        let types = vec![
+            LineType::Action,
+            LineType::SceneHeading,
+            LineType::Action,
+            LineType::Empty,
+            LineType::SceneHeading,
+            LineType::Action,
+            LineType::Empty,
+            LineType::Empty,
+            LineType::SceneHeading,
+            LineType::Action,
+            LineType::Empty,
+            LineType::Empty,
+            LineType::Empty,
+            LineType::SceneHeading,
+        ];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+
+        let phantoms: Vec<_> = layout.iter().filter(|r| r.is_phantom).collect();
+
+        assert_eq!(
+            phantoms.len(),
+            3,
+            "Smart spacing failed to calculate correct phantom lines"
+        );
     }
 }

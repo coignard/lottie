@@ -43,29 +43,36 @@ impl Parser {
 
         let mut in_boneyard = false;
         let mut in_note = false;
-        let mut has_started_metadata = false;
 
         for i in 0..lines.len() {
             let raw = &lines[i];
 
             if in_header {
+                if raw.is_empty() {
+                    in_header = false;
+                    types[i] = LineType::Empty;
+                    continue;
+                }
+
                 let trim = raw.trim();
                 if trim.is_empty() {
-                    if has_started_metadata {
+                    if raw.starts_with("  ") || raw.starts_with('\t') {
+                        types[i] = LineType::MetadataValue;
+                        continue;
+                    } else {
                         in_header = false;
                         types[i] = LineType::Empty;
-                    } else {
-                        types[i] = LineType::Empty;
+                        continue;
                     }
-                } else if META_KEY_RE.is_match(trim) {
-                    has_started_metadata = true;
+                }
+
+                if META_KEY_RE.is_match(trim) {
                     if trim.to_lowercase().starts_with("title:") {
                         types[i] = LineType::MetadataTitle;
                     } else {
                         types[i] = LineType::MetadataKey;
                     }
                 } else {
-                    has_started_metadata = true;
                     types[i] = LineType::MetadataValue;
                 }
                 continue;
@@ -74,14 +81,19 @@ impl Parser {
             let mut effective = String::new();
             let chars: Vec<char> = raw.chars().collect();
             let mut j = 0;
-            let mut completely_comment = true;
+
+            let mut boneyard_chars = 0;
+            let mut note_chars = 0;
+            let mut visible_chars = 0;
 
             while j < chars.len() {
                 if in_boneyard {
                     if j + 1 < chars.len() && chars[j] == '*' && chars[j + 1] == '/' {
                         in_boneyard = false;
+                        boneyard_chars += 2;
                         j += 2;
                     } else {
+                        boneyard_chars += 1;
                         j += 1;
                     }
                     continue;
@@ -89,8 +101,10 @@ impl Parser {
                 if in_note {
                     if j + 1 < chars.len() && chars[j] == ']' && chars[j + 1] == ']' {
                         in_note = false;
+                        note_chars += 2;
                         j += 2;
                     } else {
+                        note_chars += 1;
                         j += 1;
                     }
                     continue;
@@ -98,17 +112,19 @@ impl Parser {
 
                 if j + 1 < chars.len() && chars[j] == '/' && chars[j + 1] == '*' {
                     in_boneyard = true;
+                    boneyard_chars += 2;
                     j += 2;
                     continue;
                 }
                 if j + 1 < chars.len() && chars[j] == '[' && chars[j + 1] == '[' {
                     in_note = true;
+                    note_chars += 2;
                     j += 2;
                     continue;
                 }
 
                 if !chars[j].is_whitespace() {
-                    completely_comment = false;
+                    visible_chars += 1;
                 }
                 effective.push(chars[j]);
                 j += 1;
@@ -116,19 +132,17 @@ impl Parser {
 
             let trim = effective.trim();
 
-            if completely_comment && !raw.trim().is_empty() {
-                if raw.contains("[[") || raw.contains("]]") || in_note {
+            if visible_chars == 0 {
+                if boneyard_chars > 0 || in_boneyard {
+                    types[i] = LineType::Boneyard;
+                } else if note_chars > 0 || in_note {
                     types[i] = LineType::Note;
                 } else {
-                    types[i] = LineType::Boneyard;
+                    types[i] = LineType::Empty;
                 }
                 continue;
             }
 
-            if trim.is_empty() {
-                types[i] = LineType::Empty;
-                continue;
-            }
             if trim.starts_with("===") {
                 types[i] = LineType::PageBreak;
                 continue;
