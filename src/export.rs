@@ -124,7 +124,9 @@ pub fn export_document(
             bst.fg = Some(c);
         }
 
-        let mut display = strip_sigils(&row.raw_text, row.line_type).trim_end().to_string();
+        let mut display = strip_sigils(&row.raw_text, row.line_type)
+            .trim_end()
+            .to_string();
 
         if row.line_type == LineType::SceneHeading || row.line_type == LineType::Transition {
             display = display.to_uppercase();
