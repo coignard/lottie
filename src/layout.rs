@@ -283,41 +283,6 @@ pub fn build_layout(
             }
         }
 
-        if lt == LineType::Empty {
-            let mut indent = 0;
-            if i > 0 {
-                match types[i - 1] {
-                    LineType::Character
-                    | LineType::DualDialogueCharacter
-                    | LineType::Parenthetical => {
-                        indent = LineType::Dialogue.fmt().indent;
-                    }
-                    _ => {}
-                }
-            }
-
-            rows.push(VisualRow {
-                line_idx: i,
-                char_start: 0,
-                char_end: 0,
-                raw_text: String::new(),
-                line_type: lt,
-                indent,
-                is_active,
-                scene_num: None,
-                page_num: None,
-                override_color: None,
-                fmt: format_data.clone(),
-                is_phantom: false,
-            });
-            printable_row_count += 1;
-            if printable_row_count > 0 && printable_row_count % LINES_PER_PAGE == 0 {
-                page_number += 1;
-                page_num_pending = true;
-            }
-            continue;
-        }
-
         if lt == LineType::PageBreak {
             let display_text = if is_active {
                 raw_line.clone()
@@ -345,7 +310,18 @@ pub fn build_layout(
             continue;
         }
 
-        let fmt_rules = lt.fmt();
+        let mut fmt_rules = lt.fmt();
+        if lt == LineType::Empty && i > 0 {
+            match types[i - 1] {
+                LineType::Character
+                | LineType::DualDialogueCharacter
+                | LineType::Parenthetical
+                | LineType::Dialogue => {
+                    fmt_rules.indent = LineType::Dialogue.fmt().indent;
+                }
+                _ => {}
+            }
+        }
         let mut display = if is_active {
             raw_line.clone()
         } else {
@@ -442,16 +418,11 @@ pub fn build_layout(
                 let cur_plain = current_line.replace("**", "").replace(['*', '_'], "");
                 let cur_w = UnicodeWidthStr::width(cur_plain.as_str()) as u16;
 
-                let is_just_space = remaining_token.trim().is_empty();
-
-                if !current_line.is_empty() && cur_w + token_w > fmt_rules.width && !is_just_space {
+                if !current_line.is_empty() && cur_w + token_w > fmt_rules.width {
                     let disp_char_len = current_line.chars().count();
                     let raw_start = sigil_left + row_disp_start;
                     let raw_end = raw_start + disp_char_len;
                     let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
-
-                    let trimmed = remaining_token.trim_start();
-                    let trimmed_chars = remaining_token.chars().count() - trimmed.chars().count();
 
                     logical_rows.push(VisualRow {
                         line_idx: i,
@@ -467,10 +438,11 @@ pub fn build_layout(
                         fmt: format_data.clone(),
                         is_phantom: false,
                     });
-                    row_disp_start += disp_char_len + trimmed_chars;
+
+                    row_disp_start += disp_char_len;
                     current_line.clear();
                     scene_num = None;
-                    remaining_token = trimmed.to_string();
+
                     continue;
                 }
 
@@ -518,6 +490,7 @@ pub fn build_layout(
                         fmt: format_data.clone(),
                         is_phantom: false,
                     });
+
                     row_disp_start += disp_char_len;
                     current_line.clear();
                     scene_num = None;
@@ -561,7 +534,7 @@ pub fn build_layout(
 
         for mut r in logical_rows {
             if is_printable(lt) {
-                if page_num_pending && config.show_page_numbers {
+                if page_num_pending && config.show_page_numbers && lt != LineType::Empty {
                     r.page_num = Some(page_number);
                     page_num_pending = false;
                 }
@@ -1081,5 +1054,112 @@ mod layout_tests {
             3,
             "Smart spacing failed to calculate correct phantom lines"
         );
+    }
+
+    #[test]
+    fn test_layout_empty_line_preserves_spaces() {
+        let config = Config::default();
+        let lines = vec!["   ".to_string()];
+        let types = vec![LineType::Empty];
+
+        let layout_active = build_layout(&lines, &types, 0, &config);
+        assert_eq!(layout_active[0].raw_text, "   ");
+        assert_eq!(layout_active[0].char_end, 3);
+
+        let layout_inactive = build_layout(&lines, &types, 99, &config);
+        assert_eq!(layout_inactive[0].raw_text, "   ");
+        assert_eq!(layout_inactive[0].char_end, 3);
+    }
+
+    #[test]
+    fn test_layout_empty_line_exceeding_width_wraps() {
+        let config = Config::default();
+
+        let lines = vec![" ".repeat(130)];
+        let types = vec![LineType::Empty];
+
+        let layout = build_layout(&lines, &types, 0, &config);
+
+        assert_eq!(layout.len(), 3, "Empty line should be wrapped into 3 rows");
+
+        assert_eq!(layout[0].char_start, 0);
+        assert_eq!(layout[0].char_end, 60);
+        assert_eq!(layout[0].raw_text, " ".repeat(60));
+
+        assert_eq!(layout[1].char_start, 60);
+        assert_eq!(layout[1].char_end, 120);
+        assert_eq!(layout[1].raw_text, " ".repeat(60));
+
+        assert_eq!(layout[2].char_start, 120);
+        assert_eq!(layout[2].char_end, 130);
+        assert_eq!(layout[2].raw_text, " ".repeat(10));
+    }
+
+    #[test]
+    fn test_layout_empty_line_inherits_indent() {
+        let config = Config::default();
+        let lines = vec![
+            "CHARLOTTE".to_string(),
+            "Dialogue line".to_string(),
+            "".to_string(),
+        ];
+        let types = vec![LineType::Character, LineType::Dialogue, LineType::Empty];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+
+        let empty_row = &layout[2];
+        assert_eq!(empty_row.line_type, LineType::Empty);
+        assert_eq!(empty_row.indent, LineType::Dialogue.fmt().indent);
+    }
+
+    #[test]
+    fn test_layout_page_number_skips_empty_lines() {
+        let config = Config::default();
+
+        let mut lines = vec!["Text".to_string(); LINES_PER_PAGE];
+        let mut types = vec![LineType::Action; LINES_PER_PAGE];
+
+        lines.push("   ".to_string());
+        types.push(LineType::Empty);
+
+        lines.push("Real Text".to_string());
+        types.push(LineType::Action);
+
+        let layout = build_layout(&lines, &types, 999, &config);
+
+        let empty_row = layout
+            .iter()
+            .find(|r| r.line_type == LineType::Empty)
+            .unwrap();
+
+        assert_eq!(empty_row.page_num, None);
+
+        let text_row = layout
+            .iter()
+            .skip_while(|r| r.line_type != LineType::Empty)
+            .nth(1)
+            .unwrap();
+        assert_eq!(text_row.page_num, Some(2));
+    }
+
+    #[test]
+    fn test_layout_soft_wrap_preserves_spaces_exactly() {
+        let config = Config::default();
+
+        let line = format!("Word{}Next", " ".repeat(58));
+        let lines = vec![line];
+        let types = vec![LineType::Action];
+
+        let layout = build_layout(&lines, &types, 0, &config);
+
+        assert_eq!(layout.len(), 2, "Line should wrap exactly once");
+
+        assert_eq!(layout[0].char_start, 0);
+        assert_eq!(layout[0].char_end, 60);
+        assert_eq!(layout[0].raw_text, format!("Word{}", " ".repeat(56)));
+
+        assert_eq!(layout[1].char_start, 60);
+        assert_eq!(layout[1].char_end, 66);
+        assert_eq!(layout[1].raw_text, "  Next".to_string());
     }
 }

@@ -225,11 +225,11 @@ mod export_tests {
     use crate::parser::Parser;
 
     #[test]
-    fn test_export_integration_full_document_strict() {
+    fn test_e2e_tutorial_export_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.1
+Draft date: Version 0.2.2
 Contact:
 contact@renecoignard.com
 

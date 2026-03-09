@@ -2199,7 +2199,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.1
+Draft date: Version 0.2.2
 Contact:
 contact@renecoignard.com
 
@@ -2387,5 +2387,253 @@ And Beat itself, of course: https://www.beat-app.fi/
         assert!(app.characters.contains("RENÉ"));
         assert!(app.characters.contains("SAILOR"));
         assert!(app.locations.contains("FLAT IN WOLFEN-NORD - DAY"));
+    }
+
+    #[test]
+    fn test_ux_boundary_beginning_of_file() {
+        let mut app = create_empty_app();
+        app.lines = vec!["First".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 0;
+
+        app.move_up();
+        app.move_left();
+        app.move_word_left();
+        app.backspace();
+
+        assert_eq!(app.cursor_y, 0);
+        assert_eq!(app.cursor_x, 0);
+        assert_eq!(app.lines[0], "First");
+    }
+
+    #[test]
+    fn test_ux_boundary_end_of_file() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Last".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 4;
+
+        app.move_down();
+        app.move_right();
+        app.move_word_right();
+        app.delete_forward();
+
+        assert_eq!(app.cursor_y, 0);
+        assert_eq!(app.cursor_x, 4);
+        assert_eq!(app.lines[0], "Last");
+    }
+
+    #[test]
+    fn test_ux_line_joining_backspace() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Hello ".to_string(), "World".to_string()];
+        app.cursor_y = 1;
+        app.cursor_x = 0;
+
+        app.backspace();
+
+        assert_eq!(app.lines.len(), 1);
+        assert_eq!(app.lines[0], "Hello World");
+        assert_eq!(app.cursor_y, 0);
+        assert_eq!(app.cursor_x, 6);
+    }
+
+    #[test]
+    fn test_ux_line_joining_delete() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Hello ".to_string(), "World".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 6;
+
+        app.delete_forward();
+
+        assert_eq!(app.lines.len(), 1);
+        assert_eq!(app.lines[0], "Hello World");
+        assert_eq!(app.cursor_y, 0);
+        assert_eq!(app.cursor_x, 6);
+    }
+
+    #[test]
+    fn test_ux_line_splitting_enter() {
+        let mut app = create_empty_app();
+        app.lines = vec!["HelloWorld".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 5;
+
+        app.insert_newline(false);
+
+        assert_eq!(app.lines.len(), 2);
+        assert_eq!(app.lines[0], "Hello");
+        assert_eq!(app.lines[1], "World");
+        assert_eq!(app.cursor_y, 1);
+        assert_eq!(app.cursor_x, 0);
+    }
+
+    #[test]
+    fn test_ux_utf8_multibyte_safety() {
+        let mut app = create_empty_app();
+
+        app.lines = vec!["пути творчества".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 15;
+
+        app.delete_word_back();
+        app.backspace();
+
+        app.insert_char('н');
+        app.insert_char(' ');
+        app.insert_char('🦀');
+
+        assert_eq!(app.lines[0], "путин 🦀");
+        app.cursor_x = 7;
+
+        app.backspace();
+        assert_eq!(app.lines[0], "путин ", "backspace should delete emoji");
+        assert_eq!(
+            app.cursor_x, 6,
+            "cursor should move back once after deleting emoji"
+        );
+
+        app.backspace();
+        assert_eq!(
+            app.lines[0], "путин",
+            "backspace should delete trailing space"
+        );
+        assert_eq!(app.cursor_x, 5, "cursor should be at end of word");
+
+        app.insert_char(' ');
+        app.insert_char('х');
+        app.insert_char('у');
+        app.insert_char('й');
+        app.insert_char('л');
+        app.insert_char('о');
+        assert_eq!(
+            app.lines[0], "путин хуйло",
+            "insert_char should append correctly"
+        );
+        assert_eq!(app.cursor_x, 11, "cursor should be at end after inserts");
+
+        app.cursor_x = 0;
+        for _ in 0..6 {
+            app.delete_forward();
+        }
+        assert_eq!(
+            app.lines[0], "хуйло",
+            "delete_forward should remove first word char by char"
+        );
+        assert_eq!(app.cursor_x, 0, "cursor should stay at position 0");
+
+        app.cursor_x = 5;
+        app.backspace();
+        app.backspace();
+        assert_eq!(
+            app.lines[0], "хуй",
+            "delete_word_back should remove last two chars"
+        );
+        assert_eq!(app.cursor_x, 3, "cursor should be at end of remaining word");
+    }
+
+    #[test]
+    fn test_ux_visual_up_down_inside_soft_wrapped_line() {
+        let mut app = create_empty_app();
+        let long_line = "A".repeat(100);
+        app.lines = vec!["Short line".to_string(), long_line];
+        app.types = vec![LineType::Action, LineType::Action];
+
+        app.update_layout();
+
+        app.cursor_y = 1;
+        app.cursor_x = 80;
+        app.target_visual_x = 20;
+
+        app.move_up();
+
+        assert_eq!(
+            app.cursor_y, 1,
+            "Cursor should stay on the same logical line"
+        );
+        assert_eq!(
+            app.cursor_x, 20,
+            "Cursor should move to the upper visual row of the soft-wrapped line"
+        );
+
+        app.move_down();
+        assert_eq!(app.cursor_y, 1);
+        assert_eq!(
+            app.cursor_x, 80,
+            "Cursor should return to the lower visual row"
+        );
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_deletion() {
+        let mut app = create_empty_app();
+        app.lines = vec!["()".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.backspace();
+        assert_eq!(app.lines[0], "");
+        assert_eq!(app.cursor_x, 0);
+    }
+
+    #[test]
+    fn test_ux_undo_restores_cursor_position_perfectly() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Some text".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 5;
+
+        app.save_state(true);
+
+        app.insert_char('A');
+        assert_eq!(app.cursor_x, 6);
+
+        app.undo();
+
+        assert_eq!(app.lines[0], "Some text");
+        assert_eq!(app.cursor_x, 5);
+    }
+
+    #[test]
+    fn test_ux_ghost_cursor_memory_target_x() {
+        let mut app = create_empty_app();
+        app.lines = vec!["a".repeat(20), "b".repeat(3), "c".repeat(20)];
+
+        app.parse_document();
+
+        app.cursor_y = 0;
+        app.cursor_x = 15;
+        app.update_layout();
+        app.target_visual_x = app.current_visual_x();
+
+        app.move_down();
+        assert_eq!(app.cursor_y, 1);
+        assert_eq!(app.cursor_x, 3);
+
+        app.move_down();
+        assert_eq!(app.cursor_y, 2);
+
+        assert_eq!(
+            app.cursor_x, 15,
+            "Cursor forgot its target_visual_x memory!"
+        );
+    }
+
+    #[test]
+    fn test_ux_tab_state_machine_middle_of_line() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Some text here".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 5;
+
+        app.handle_tab();
+
+        assert_eq!(app.lines[0], "@Some text here");
+        assert_eq!(
+            app.cursor_x, 6,
+            "Cursor must shift right when a sigil is prepended!"
+        );
     }
 }
