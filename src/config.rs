@@ -84,6 +84,14 @@ pub struct Cli {
     /// Set shot style (e.g., "bold")
     #[arg(long)]
     pub shot_style: Option<String>,
+
+    /// Export the rendered script to a file
+    #[arg(long, value_name = "FILE")]
+    pub export: Option<PathBuf>,
+
+    /// Format for the export (plain, ascii, ansi)
+    #[arg(long, default_value = "plain", value_name = "FORMAT")]
+    pub format: String,
 }
 
 #[derive(Clone, Debug)]

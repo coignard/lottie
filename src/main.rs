@@ -17,6 +17,7 @@
 
 mod app;
 mod config;
+mod export;
 mod formatting;
 mod layout;
 mod parser;
@@ -35,6 +36,40 @@ use std::{io, panic, time::Duration};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+
+    if let Some(export_path) = cli.export.clone() {
+        let in_path = cli.file.clone();
+
+        if in_path.is_none() || !in_path.as_ref().unwrap().exists() {
+            eprintln!("Error: Input file does not exist or was not provided.");
+            std::process::exit(1);
+        }
+
+        let mut app = App::new(in_path, cli.clone());
+        app.cursor_y = usize::MAX;
+        app.update_layout();
+
+        let fmt = cli.format.to_lowercase();
+        let with_ansi = match fmt.as_str() {
+            "ansi" => true,
+            "plain" | "ascii" => false,
+            _ => {
+                eprintln!(
+                    "Error: Unknown export format '{}'. Expected 'plain', 'ascii', or 'ansi'.",
+                    fmt
+                );
+                std::process::exit(1);
+            }
+        };
+
+        let output = export::export_document(&app.layout, &app.lines, &app.config, with_ansi);
+        if let Err(e) = std::fs::write(&export_path, output) {
+            eprintln!("Error writing to '{}': {}", export_path.display(), e);
+            std::process::exit(1);
+        }
+
+        return Ok(());
+    }
 
     let default_panic = panic::take_hook();
     panic::set_hook(Box::new(move |info| {

@@ -46,17 +46,68 @@ lottie
 
 ## Features
 
-### Writing
-Smart automatic Fountain formatting, with inline markup hidden until the cursor is on the line. Bold, italic, underlined text, notes, boneyard comments and colour markers are all supported.
+```
+     1      INT. TERMINAL - NIGHT                                             1.
 
-### Editing
-Undo/redo, cut and paste by line, matching parentheses and bracket auto-close, automatic (CONT'D) insertion for continuing characters, and a typewriter mode that keeps the active line centred on screen.
+            A cursor blinks. Text appears on screen, letter by letter.
 
-### Structure
-Automatic scene and page numbering, configurable blank lines before scene headings, and colour markers on scenes, sections and synopses via `[[yellow text]]` syntax.
+                                LOTTIE
+                       Hi there! I handle the Fountain
+                       formatting as you go.
 
-### Autocompletion
-Character names and scene headings are completed as you type, drawn from the rest of the document.
+                                WRITER
+                       What about markup? Do I have to
+                       look at ugly asterisks all day?
+
+                                LOTTIE
+                       Only when your cursor is on the
+                       line. Bold, italic, underlined is
+                       hidden the rest of the time.
+
+            The Writer makes a mistake. ^Z. Gone.
+
+                                WRITER
+                       I hate typing closing brackets.
+
+                                LOTTIE
+                            (smiling)
+                       Don't. I close them for you. And
+                       if you keep talking...
+
+                                LOTTIE (CONT'D)
+                       ...I'll add the (CONT'D) myself.
+
+            /* PRO TIP: did you know that in typewriter mode, the active
+            line stays fixed to the centre of the screen? */
+
+            ────────────────────────────────────────────────────────────
+
+     2      EXT. OUTSIDE A COMPUTER - DAY                                     2.
+
+                                LOTTIE
+                       Look. Scene numbers on the left.
+                       Page numbers on the right. Both
+                       automatic. Blank lines before
+                       headings are configurable.
+
+                                WRITER
+                       What about autocompletion?
+
+                                LOTTIE
+                       I pick up character names and
+                       locations as you write. Tab
+                       finishes the word and cycles the
+                       line type while you're at it.
+
+            /* PRO TIP: did you know that this screenplay was exported
+            directly from Lottie using --export? */
+
+                                LOTTIE (CONT'D)
+                       See you space cowboy...
+
+                                                               FADE OUT.
+```
+
 
 ## Keyboard shortcuts
 
