@@ -137,6 +137,17 @@ impl Parser {
                     types[i] = LineType::Boneyard;
                 } else if note_chars > 0 || in_note {
                     types[i] = LineType::Note;
+                } else if raw == "  "
+                    && i > 0
+                    && matches!(
+                        types[i - 1],
+                        LineType::Character
+                            | LineType::DualDialogueCharacter
+                            | LineType::Parenthetical
+                            | LineType::Dialogue
+                    )
+                {
+                    types[i] = LineType::Dialogue;
                 } else {
                     types[i] = LineType::Empty;
                 }
@@ -307,8 +318,9 @@ mod parser_tests {
     fn test_parse_metadata_block_strict() {
         let lines = vec![
             "Title: Date in Kutaisi".to_string(),
-            "Author: René Coignard".to_string(),
-            "  Co-Author: Charlotte C.".to_string(),
+            "Authors:".to_string(),
+            "  René Coignard,".to_string(),
+            "  Charlotte C.".to_string(),
             "".to_string(),
             "INT. RIONI RIVERBANK - EVENING".to_string(),
         ];
@@ -316,8 +328,9 @@ mod parser_tests {
         assert_eq!(types[0], LineType::MetadataTitle);
         assert_eq!(types[1], LineType::MetadataKey);
         assert_eq!(types[2], LineType::MetadataValue);
-        assert_eq!(types[3], LineType::Empty);
-        assert_eq!(types[4], LineType::SceneHeading);
+        assert_eq!(types[3], LineType::MetadataValue);
+        assert_eq!(types[4], LineType::Empty);
+        assert_eq!(types[5], LineType::SceneHeading);
     }
 
     #[test]
@@ -498,5 +511,20 @@ mod parser_tests {
         assert_eq!(types[0], LineType::Empty);
         assert_eq!(types[1], LineType::Action);
         assert_eq!(types[2], LineType::Action);
+    }
+
+    #[test]
+    fn test_parse_dialogue_with_empty_line() {
+        let lines = vec![
+            "CHARLOTTE".to_string(),
+            "Line 1".to_string(),
+            "  ".to_string(),
+            "Line 2".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::Character);
+        assert_eq!(types[1], LineType::Dialogue);
+        assert_eq!(types[2], LineType::Dialogue);
+        assert_eq!(types[3], LineType::Dialogue);
     }
 }

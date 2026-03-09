@@ -146,16 +146,22 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
     fmt
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RenderConfig {
+    pub reveal_markup: bool,
+    pub skip_markdown: bool,
+    pub exclude_comments: bool,
+    pub char_offset: usize,
+    pub meta_key_end: usize,
+}
+
 pub fn render_inline(
     text: &str,
     base: Style,
-    reveal_markup: bool,
-    skip_markdown: bool,
     fmt: &LineFormatting,
-    char_offset: usize,
-    meta_key_end: usize,
+    cfg: RenderConfig,
 ) -> Vec<Span<'static>> {
-    if skip_markdown {
+    if cfg.skip_markdown && !cfg.exclude_comments {
         return vec![Span::styled(text.to_string(), base)];
     }
 
@@ -165,14 +171,20 @@ pub fn render_inline(
     let mut current_style = base;
 
     for (local_i, &c) in chars.iter().enumerate() {
-        let global_i = char_offset + local_i;
+        let global_i = cfg.char_offset + local_i;
 
-        if !reveal_markup && fmt.hidden_chars.contains(&global_i) {
+        if cfg.exclude_comments
+            && (fmt.boneyard.contains(&global_i) || fmt.note.contains(&global_i))
+        {
+            continue;
+        }
+
+        if !cfg.reveal_markup && fmt.hidden_chars.contains(&global_i) {
             continue;
         }
 
         let mut s = base;
-        let is_key = global_i < meta_key_end;
+        let is_key = global_i < cfg.meta_key_end;
 
         if fmt.bold.contains(&global_i) {
             s.add_modifier = s.add_modifier.union(Modifier::BOLD);
@@ -307,7 +319,11 @@ mod formatting_tests {
     #[test]
     fn test_render_inline_no_markdown_skip() {
         let fmt = parse_formatting("**bold**");
-        let spans = render_inline("**bold**", Style::default(), false, true, &fmt, 0, 0);
+        let cfg = RenderConfig {
+            skip_markdown: true,
+            ..Default::default()
+        };
+        let spans = render_inline("**bold**", Style::default(), &fmt, cfg);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content, "**bold**");
     }
@@ -315,7 +331,11 @@ mod formatting_tests {
     #[test]
     fn test_render_inline_reveal_markup() {
         let fmt = parse_formatting("**bold**");
-        let spans = render_inline("**bold**", Style::default(), true, false, &fmt, 0, 0);
+        let cfg = RenderConfig {
+            reveal_markup: true,
+            ..Default::default()
+        };
+        let spans = render_inline("**bold**", Style::default(), &fmt, cfg);
         let complete_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(complete_text, "**bold**");
     }
@@ -323,7 +343,7 @@ mod formatting_tests {
     #[test]
     fn test_render_inline_hide_markup() {
         let fmt = parse_formatting("**bold**");
-        let spans = render_inline("**bold**", Style::default(), false, false, &fmt, 0, 0);
+        let spans = render_inline("**bold**", Style::default(), &fmt, RenderConfig::default());
         let complete_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(complete_text, "bold");
     }
@@ -331,7 +351,11 @@ mod formatting_tests {
     #[test]
     fn test_render_inline_metadata_key_color() {
         let fmt = LineFormatting::default();
-        let spans = render_inline("Title: Text", Style::default(), false, false, &fmt, 0, 7);
+        let cfg = RenderConfig {
+            meta_key_end: 7,
+            ..Default::default()
+        };
+        let spans = render_inline("Title: Text", Style::default(), &fmt, cfg);
         assert_eq!(spans[0].content, "Title: ");
         assert_eq!(spans[0].style.fg, Some(ratatui::style::Color::DarkGray));
         assert_eq!(spans[1].content, "Text");

@@ -19,7 +19,7 @@ use ratatui::style::{Color, Modifier, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::Config;
-use crate::formatting::render_inline;
+use crate::formatting::{RenderConfig, render_inline};
 use crate::layout::{VisualRow, strip_sigils};
 use crate::types::{LineType, PAGE_WIDTH, base_style};
 
@@ -76,11 +76,27 @@ pub fn export_document(
     let global_pad = 12usize;
     let gap_size = 6usize;
 
+    let mut skipped_comment = false;
+
     for row in layout {
+        if matches!(
+            row.line_type,
+            LineType::Boneyard | LineType::Note | LineType::Section | LineType::Synopsis
+        ) {
+            skipped_comment = true;
+            continue;
+        }
+
         if row.line_type == LineType::Empty && row.page_num.is_none() {
+            if skipped_comment {
+                skipped_comment = false;
+                continue;
+            }
             output.push('\n');
             continue;
         }
+
+        skipped_comment = false;
 
         let mut line_str = String::new();
         let mut visual_width = 0usize;
@@ -159,11 +175,14 @@ pub fn export_document(
         let spans = render_inline(
             &display,
             bst,
-            reveal_markup,
-            skip_md,
             &row.fmt,
-            row.char_start,
-            meta_key_end,
+            RenderConfig {
+                reveal_markup,
+                skip_markdown: skip_md,
+                exclude_comments: true,
+                char_offset: row.char_start,
+                meta_key_end,
+            },
         );
 
         for span in spans {
@@ -210,7 +229,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.0
+Draft date: Version 0.2.1
 Contact:
 contact@renecoignard.com
 
@@ -351,10 +370,6 @@ And Beat itself, of course: https://www.beat-app.fi/
             .iter()
             .position(|l| l.trim() == "Meine Damen, meine Herrn, danke")
             .unwrap();
-        let idx_color_note = plain_lines
-            .iter()
-            .position(|l| l.contains("marker blue"))
-            .unwrap();
 
         assert_eq!(
             plain_lines[idx_title],
@@ -399,14 +414,6 @@ And Beat itself, of course: https://www.beat-app.fi/
             ansi_lines[idx_markdown],
             format!(
                 "{}As you may have noticed, there's support for \x1b[1mbold text\x1b[0m,",
-                " ".repeat(12)
-            )
-        );
-
-        assert_eq!(
-            ansi_lines[idx_color_note],
-            format!(
-                "{}\x1b[3m\x1b[34m[[marker blue The colour of these comment markers can be\x1b[0m",
                 " ".repeat(12)
             )
         );

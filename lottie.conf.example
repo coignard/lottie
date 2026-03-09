@@ -19,6 +19,9 @@ set hide_markup
 # Typewriter mode
 unset typewriter_mode
 
+# Focus mode
+unset focus_mode
+
 ## Editor Behavior
 
 # Auto-complete scene headings (INT./EXT.) and character names.

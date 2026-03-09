@@ -30,7 +30,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKin
 
 use crate::{
     config::{Cli, Config},
-    formatting::render_inline,
+    formatting::{RenderConfig, render_inline},
     layout::{VisualRow, build_layout, find_visual_cursor, strip_sigils},
     parser::Parser,
     types::{LineType, PAGE_WIDTH, base_style},
@@ -96,7 +96,9 @@ impl App {
 
         let lines = match &path {
             Some(p) if p.exists() => {
-                let text = fs::read_to_string(p).unwrap_or_default();
+                let text = fs::read_to_string(p)
+                    .unwrap_or_default()
+                    .replace('\t', "    ");
                 if text.trim().is_empty() {
                     is_new_or_empty = true;
                     vec![String::new()]
@@ -247,7 +249,8 @@ impl App {
             self.save_state(true);
             let lines_to_paste: Vec<&str> = cut_buf.split('\n').collect();
             for (i, l) in lines_to_paste.iter().enumerate() {
-                self.lines.insert(self.cursor_y + i, l.to_string());
+                self.lines
+                    .insert(self.cursor_y + i, l.replace('\t', "    "));
             }
             self.cursor_y += lines_to_paste.len();
             self.cursor_x = 0;
@@ -1224,15 +1227,26 @@ impl App {
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
+    let is_prompt = app.mode != AppMode::Normal;
+    let has_status = app.status_msg.is_some();
+
+    let show_top = !app.config.focus_mode;
+    let show_bottom = !app.config.focus_mode || is_prompt || has_status;
+
+    let title_height = if show_top { 1 } else { 0 };
+    let status_height = if show_bottom { 1 } else { 0 };
+    let shortcut_height = if show_bottom { 2 } else { 0 };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
+            Constraint::Length(title_height),
             Constraint::Min(0),
-            Constraint::Length(1),
-            Constraint::Length(2),
+            Constraint::Length(status_height),
+            Constraint::Length(shortcut_height),
         ])
         .split(area);
+
     let (title_area, text_area, status_area, shortcut_area) =
         (chunks[0], chunks[1], chunks[2], chunks[3]);
 
@@ -1330,11 +1344,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             spans.extend(render_inline(
                 &display,
                 bst,
-                reveal_markup,
-                skip_md,
                 &row.fmt,
-                row.char_start,
-                meta_key_end,
+                RenderConfig {
+                    reveal_markup,
+                    skip_markdown: skip_md,
+                    exclude_comments: false,
+                    char_offset: row.char_start,
+                    meta_key_end,
+                },
             ));
 
             if row.is_active
@@ -1374,136 +1391,142 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     f.render_widget(Paragraph::new(visible), text_area);
 
-    let app_version = env!("CARGO_PKG_VERSION");
-    let left_text = format!("  lottie {}", app_version);
-    let right_text = if app.dirty { "Modified  " } else { "  " };
-    let center_text = app
-        .file
-        .as_ref()
-        .and_then(|p| p.file_name())
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "New Script".to_string());
+    if title_area.height > 0 {
+        let app_version = env!("CARGO_PKG_VERSION");
+        let left_text = format!("  lottie {}", app_version);
+        let right_text = if app.dirty { "Modified  " } else { "  " };
+        let center_text = app
+            .file
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "New Script".to_string());
 
-    let width = title_area.width as usize;
-    let left_len = left_text.chars().count();
-    let right_len = right_text.chars().count();
-    let center_len = center_text.chars().count();
+        let width = title_area.width as usize;
+        let left_len = left_text.chars().count();
+        let right_len = right_text.chars().count();
+        let center_len = center_text.chars().count();
 
-    let center_start = (width.saturating_sub(center_len)) / 2;
-    let pad1 = center_start.saturating_sub(left_len);
-    let pad2 = width.saturating_sub(left_len + pad1 + center_len + right_len);
+        let center_start = (width.saturating_sub(center_len)) / 2;
+        let pad1 = center_start.saturating_sub(left_len);
+        let pad2 = width.saturating_sub(left_len + pad1 + center_len + right_len);
 
-    let title_line = format!(
-        "{}{}{}{}{}",
-        left_text,
-        " ".repeat(pad1),
-        center_text,
-        " ".repeat(pad2),
-        right_text
-    );
-    f.render_widget(
-        Paragraph::new(title_line).style(Style::default().add_modifier(Modifier::REVERSED)),
-        title_area,
-    );
+        let title_line = format!(
+            "{}{}{}{}{}",
+            left_text,
+            " ".repeat(pad1),
+            center_text,
+            " ".repeat(pad2),
+            right_text
+        );
+        f.render_widget(
+            Paragraph::new(title_line).style(Style::default().add_modifier(Modifier::REVERSED)),
+            title_area,
+        );
+    }
 
-    match app.mode {
-        AppMode::Search => {
-            let prompt_base = if app.last_search.is_empty() {
-                "Search: ".to_string()
-            } else {
-                format!("Search [{}]: ", app.last_search)
-            };
-            let prompt_str = format!("{}{}", prompt_base, app.search_query);
-            let status_padded =
-                format!("{:<width$}", prompt_str, width = status_area.width as usize);
-            f.render_widget(
-                Paragraph::new(status_padded)
-                    .style(Style::default().add_modifier(Modifier::REVERSED)),
-                status_area,
-            );
-        }
-        AppMode::PromptSave => {
-            let prompt_str = "Save modified script?";
-            let status_padded =
-                format!("{:<width$}", prompt_str, width = status_area.width as usize);
-            f.render_widget(
-                Paragraph::new(status_padded)
-                    .style(Style::default().add_modifier(Modifier::REVERSED)),
-                status_area,
-            );
-        }
-        AppMode::PromptFilename => {
-            let prompt_base = format!("File Name to Write: {}", app.filename_input);
-            let status_padded = format!(
-                "{:<width$}",
-                prompt_base,
-                width = status_area.width as usize
-            );
-            f.render_widget(
-                Paragraph::new(status_padded)
-                    .style(Style::default().add_modifier(Modifier::REVERSED)),
-                status_area,
-            );
-        }
-        AppMode::Normal => {
-            if let Some(msg) = &app.status_msg {
-                let bracketed = format!("[ {} ]", msg);
-                let msg_len = bracketed.chars().count();
-                let pad_left = (status_area.width as usize).saturating_sub(msg_len) / 2;
+    if status_area.height > 0 {
+        match app.mode {
+            AppMode::Search => {
+                let prompt_base = if app.last_search.is_empty() {
+                    "Search: ".to_string()
+                } else {
+                    format!("Search [{}]: ", app.last_search)
+                };
+                let prompt_str = format!("{}{}", prompt_base, app.search_query);
+                let status_padded =
+                    format!("{:<width$}", prompt_str, width = status_area.width as usize);
+                f.render_widget(
+                    Paragraph::new(status_padded)
+                        .style(Style::default().add_modifier(Modifier::REVERSED)),
+                    status_area,
+                );
+            }
+            AppMode::PromptSave => {
+                let prompt_str = "Save modified script?";
+                let status_padded =
+                    format!("{:<width$}", prompt_str, width = status_area.width as usize);
+                f.render_widget(
+                    Paragraph::new(status_padded)
+                        .style(Style::default().add_modifier(Modifier::REVERSED)),
+                    status_area,
+                );
+            }
+            AppMode::PromptFilename => {
+                let prompt_base = format!("File Name to Write: {}", app.filename_input);
+                let status_padded = format!(
+                    "{:<width$}",
+                    prompt_base,
+                    width = status_area.width as usize
+                );
+                f.render_widget(
+                    Paragraph::new(status_padded)
+                        .style(Style::default().add_modifier(Modifier::REVERSED)),
+                    status_area,
+                );
+            }
+            AppMode::Normal => {
+                if let Some(msg) = &app.status_msg {
+                    let bracketed = format!("[ {} ]", msg);
+                    let msg_len = bracketed.chars().count();
+                    let pad_left = (status_area.width as usize).saturating_sub(msg_len) / 2;
 
-                let spans = vec![
-                    Span::raw(" ".repeat(pad_left)),
-                    Span::styled(bracketed, Style::default().add_modifier(Modifier::REVERSED)),
-                ];
-                f.render_widget(Paragraph::new(Line::from(spans)), status_area);
-            } else {
-                f.render_widget(Paragraph::new(""), status_area);
+                    let spans = vec![
+                        Span::raw(" ".repeat(pad_left)),
+                        Span::styled(bracketed, Style::default().add_modifier(Modifier::REVERSED)),
+                    ];
+                    f.render_widget(Paragraph::new(Line::from(spans)), status_area);
+                } else {
+                    f.render_widget(Paragraph::new(""), status_area);
+                }
             }
         }
     }
 
-    let (sc1, sc2) = match app.mode {
-        AppMode::PromptSave => (vec![(" Y", "Yes")], vec![(" N", "No"), ("^C", "Cancel")]),
-        _ => (
-            vec![
-                ("^S", "Save"),
-                ("^K", "Cut"),
-                ("^Z", "Undo"),
-                ("^W", "Where Is"),
-            ],
-            vec![
-                ("^X", "Exit"),
-                ("^U", "Paste"),
-                ("^R", "Redo"),
-                ("^C", "Cur Pos"),
-            ],
-        ),
-    };
+    if shortcut_area.height > 0 {
+        let (sc1, sc2) = match app.mode {
+            AppMode::PromptSave => (vec![(" Y", "Yes")], vec![(" N", "No"), ("^C", "Cancel")]),
+            _ => (
+                vec![
+                    ("^S", "Save"),
+                    ("^K", "Cut"),
+                    ("^Z", "Undo"),
+                    ("^W", "Where Is"),
+                ],
+                vec![
+                    ("^X", "Exit"),
+                    ("^U", "Paste"),
+                    ("^R", "Redo"),
+                    ("^C", "Cur Pos"),
+                ],
+            ),
+        };
 
-    let col_width = (shortcut_area.width / 4) as usize;
+        let col_width = (shortcut_area.width / 4) as usize;
 
-    let render_shortcut_row = |shortcuts: &[(&str, &str)]| -> Line<'static> {
-        let mut spans = Vec::new();
-        for (key, desc) in shortcuts.iter() {
-            spans.push(Span::styled(
-                key.to_string(),
-                Style::default().add_modifier(Modifier::REVERSED),
-            ));
-            let text = format!(
-                " {:<width$}",
-                desc,
-                width = col_width.saturating_sub(key.chars().count() + 1)
-            );
-            spans.push(Span::raw(text));
-        }
-        Line::from(spans)
-    };
+        let render_shortcut_row = |shortcuts: &[(&str, &str)]| -> Line<'static> {
+            let mut spans = Vec::new();
+            for (key, desc) in shortcuts.iter() {
+                spans.push(Span::styled(
+                    key.to_string(),
+                    Style::default().add_modifier(Modifier::REVERSED),
+                ));
+                let text = format!(
+                    " {:<width$}",
+                    desc,
+                    width = col_width.saturating_sub(key.chars().count() + 1)
+                );
+                spans.push(Span::raw(text));
+            }
+            Line::from(spans)
+        };
 
-    let shortcuts_lines = vec![render_shortcut_row(&sc1), render_shortcut_row(&sc2)];
-    f.render_widget(Paragraph::new(shortcuts_lines), shortcut_area);
+        let shortcuts_lines = vec![render_shortcut_row(&sc1), render_shortcut_row(&sc2)];
+        f.render_widget(Paragraph::new(shortcuts_lines), shortcut_area);
+    }
 
     match app.mode {
-        AppMode::Search => {
+        AppMode::Search if status_area.height > 0 => {
             let prompt_base = if app.last_search.is_empty() {
                 "Search: ".to_string()
             } else {
@@ -1514,14 +1537,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             let cur_screen_x = status_area.x + query_w as u16;
             f.set_cursor_position((cur_screen_x, status_area.y));
         }
-        AppMode::PromptFilename => {
+        AppMode::PromptFilename if status_area.height > 0 => {
             let prompt_base = "File Name to Write: ";
             let query_w = UnicodeWidthStr::width(prompt_base)
                 + UnicodeWidthStr::width(app.filename_input.as_str());
             let cur_screen_x = status_area.x + query_w as u16;
             f.set_cursor_position((cur_screen_x, status_area.y));
         }
-        AppMode::PromptSave => {
+        AppMode::PromptSave if status_area.height > 0 => {
             let query_w = UnicodeWidthStr::width("Save modified buffer?");
             let cur_screen_x = (status_area.x + query_w as u16 + 1)
                 .min(status_area.x + status_area.width.saturating_sub(1));
@@ -1534,6 +1557,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 f.set_cursor_position((cur_screen_x, cur_screen_y));
             }
         }
+        _ => {}
     }
 }
 
@@ -2082,11 +2106,100 @@ mod app_tests {
     }
 
     #[test]
+    fn test_draw_focus_mode_hides_panels() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+        app.config.focus_mode = true;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let mut content = String::new();
+        let buffer = terminal.backend().buffer();
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                content.push_str(buffer[(x, y)].symbol());
+            }
+        }
+
+        assert!(
+            !content.contains("lottie"),
+            "Top panel should be hidden in focus mode"
+        );
+        assert!(
+            !content.contains("^X"),
+            "Bottom panel should be hidden in focus mode"
+        );
+    }
+
+    #[test]
+    fn test_draw_focus_mode_shows_prompt() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+        app.config.focus_mode = true;
+        app.mode = AppMode::PromptSave;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let mut content = String::new();
+        let buffer = terminal.backend().buffer();
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                content.push_str(buffer[(x, y)].symbol());
+            }
+        }
+
+        assert!(
+            content.contains("Save modified script?"),
+            "Prompt should appear even in focus mode"
+        );
+        assert!(
+            content.contains("Yes"),
+            "Shortcuts should reappear for the prompt"
+        );
+    }
+
+    #[test]
+    fn test_draw_focus_mode_shows_status_msg() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+        app.config.focus_mode = true;
+        app.set_status("GNU Terry Pratchett");
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let mut content = String::new();
+        let buffer = terminal.backend().buffer();
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                content.push_str(buffer[(x, y)].symbol());
+            }
+        }
+
+        assert!(
+            content.contains("GNU Terry Pratchett"),
+            "Status message should appear even in focus mode"
+        );
+        assert!(
+            content.contains("^X"),
+            "Shortcuts should reappear when status is shown"
+        );
+    }
+
+    #[test]
     fn test_e2e_tutorial_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.0
+Draft date: Version 0.2.1
 Contact:
 contact@renecoignard.com
 

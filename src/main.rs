@@ -63,7 +63,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let output = export::export_document(&app.layout, &app.lines, &app.config, with_ansi);
-        if let Err(e) = std::fs::write(&export_path, output) {
+
+        if export_path.as_os_str() == "-" {
+            print!("{}", output);
+        } else if let Err(e) = std::fs::write(&export_path, output) {
             eprintln!("Error writing to '{}': {}", export_path.display(), e);
             std::process::exit(1);
         }

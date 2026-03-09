@@ -65,6 +65,10 @@ pub struct Cli {
     #[arg(long)]
     pub typewriter_mode: bool,
 
+    /// Enable focus mode
+    #[arg(long)]
+    pub focus_mode: bool,
+
     /// Disable breaking actions across pages
     #[arg(long)]
     pub no_break_actions: bool,
@@ -85,8 +89,8 @@ pub struct Cli {
     #[arg(long)]
     pub shot_style: Option<String>,
 
-    /// Export the rendered script to a file
-    #[arg(long, value_name = "FILE")]
+    /// Export the rendered script to a file or stdout (use '-' or omit value for stdout)
+    #[arg(long, value_name = "FILE", num_args = 0..=1, default_missing_value = "-")]
     pub export: Option<PathBuf>,
 
     /// Format for the export (plain, ascii, ansi)
@@ -107,6 +111,7 @@ pub struct Config {
     pub close_elements: bool,
     pub auto_title_page: bool,
     pub typewriter_mode: bool,
+    pub focus_mode: bool,
 
     pub contd_extension: String,
     pub break_actions: bool,
@@ -129,6 +134,7 @@ impl Default for Config {
             close_elements: true,
             auto_title_page: false,
             typewriter_mode: false,
+            focus_mode: false,
 
             contd_extension: "(CONT'D)".to_string(),
             break_actions: true,
@@ -179,6 +185,7 @@ impl Config {
                             "close_elements" => config.close_elements = true,
                             "auto_title_page" => config.auto_title_page = true,
                             "typewriter_mode" => config.typewriter_mode = true,
+                            "focus_mode" => config.focus_mode = true,
                             "break_actions" => config.break_actions = true,
                             "contd_extension" => config.contd_extension = val,
                             "heading_style" => config.heading_style = val,
@@ -202,6 +209,7 @@ impl Config {
                             "close_elements" => config.close_elements = false,
                             "auto_title_page" => config.auto_title_page = false,
                             "typewriter_mode" => config.typewriter_mode = false,
+                            "focus_mode" => config.focus_mode = false,
                             "break_actions" => config.break_actions = false,
                             _ => {}
                         }
@@ -210,7 +218,6 @@ impl Config {
             }
         }
 
-        // Apply CLI overrides over loaded config
         if cli.hide_scene_numbers {
             config.show_scene_numbers = false;
         }
@@ -240,6 +247,9 @@ impl Config {
         }
         if cli.typewriter_mode {
             config.typewriter_mode = true;
+        }
+        if cli.focus_mode {
+            config.focus_mode = true;
         }
         if cli.no_break_actions {
             config.break_actions = false;
@@ -278,6 +288,7 @@ mod config_tests {
         assert!(config.close_elements);
         assert!(!config.auto_title_page);
         assert!(!config.typewriter_mode);
+        assert!(!config.focus_mode);
         assert!(config.break_actions);
         assert_eq!(config.contd_extension, "(CONT'D)");
         assert_eq!(config.heading_style, "bold");
