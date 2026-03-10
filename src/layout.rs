@@ -287,7 +287,8 @@ pub fn build_layout(
             let display_text = if is_active {
                 raw_line.clone()
             } else {
-                "─".repeat(PAGE_WIDTH as usize)
+                let fill_char = if config.force_ascii { "-" } else { "─" };
+                fill_char.repeat(PAGE_WIDTH as usize)
             };
 
             rows.push(VisualRow {
@@ -776,6 +777,16 @@ mod layout_tests {
         let types = vec![LineType::PageBreak];
         let layout = build_layout(&lines, &types, 99, &config);
         assert_eq!(layout[0].raw_text, "─".repeat(PAGE_WIDTH as usize));
+    }
+
+    #[test]
+    fn test_layout_page_break_force_ascii() {
+        let mut config = Config::default();
+        config.force_ascii = true;
+        let lines = vec!["===".to_string()];
+        let types = vec![LineType::PageBreak];
+        let layout = build_layout(&lines, &types, 99, &config);
+        assert_eq!(layout[0].raw_text, "-".repeat(PAGE_WIDTH as usize));
     }
 
     #[test]

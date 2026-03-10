@@ -64,3 +64,22 @@ set heading_spacing 1
 # Styling applied to shots (e.g. !! CLOSE UP).
 # Available values: "bold", "underline", "bold underline"
 set shot_style "bold"
+
+## Display & Terminal
+
+# Disable all terminal colors. Lottie will still render bold,
+# italic, and underline modifiers if supported by your terminal.
+# Lottie tries to detect color support automatically.
+unset no_color
+
+# Disable all text formatting (bold, italic, underline).
+unset no_formatting
+
+# Force output of ANSI color escape codes, even if Lottie detects
+# that your terminal does not support them.
+unset force_ansi
+
+# Force the use of ASCII characters instead of Unicode
+# (e.g., for page break lines). Useful for older terminals.
+# Lottie will try to detect Unicode support automatically.
+unset force_ascii

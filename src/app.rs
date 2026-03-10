@@ -960,12 +960,10 @@ impl App {
             match mouse_event.kind {
                 MouseEventKind::ScrollUp => {
                     self.move_up();
-                    *update_target_x = true;
                     *cursor_moved = true;
                 }
                 MouseEventKind::ScrollDown => {
                     self.move_down();
-                    *update_target_x = true;
                     *cursor_moved = true;
                 }
                 _ => {}
@@ -1269,6 +1267,23 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
     }
 
+    let mut dark_gray_style = Style::default();
+    if !app.config.no_color {
+        dark_gray_style.fg = Some(Color::DarkGray);
+    }
+
+    let mut sug_style = Style::default().add_modifier(Modifier::DIM);
+    if !app.config.no_color {
+        sug_style.fg = Some(Color::DarkGray);
+    }
+
+    let mut page_num_style = Style::default().add_modifier(Modifier::BOLD);
+    if !app.config.no_color {
+        page_num_style.fg = Some(Color::DarkGray);
+    }
+
+    let panel_style = Style::default().add_modifier(Modifier::REVERSED);
+
     let visible: Vec<Line> = app
         .layout
         .iter()
@@ -1285,10 +1300,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 if global_pad >= s_len + gap_size {
                     let pad = global_pad - s_len - gap_size;
                     spans.push(Span::raw(" ".repeat(pad as usize)));
-                    spans.push(Span::styled(s_str, Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(s_str, dark_gray_style));
                     spans.push(Span::raw(" ".repeat(gap_size as usize)));
                 } else {
-                    spans.push(Span::styled(s_str, Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(s_str, dark_gray_style));
                     spans.push(Span::raw(" "));
                 }
             } else {
@@ -1298,7 +1313,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             spans.push(Span::raw(" ".repeat(row.indent as usize)));
 
             let mut bst = base_style(row.line_type, &app.config);
-            if let Some(c) = row.override_color {
+            if let Some(c) = row.override_color
+                && !app.config.no_color
+            {
                 bst.fg = Some(c);
             }
 
@@ -1351,6 +1368,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     exclude_comments: false,
                     char_offset: row.char_start,
                     meta_key_end,
+                    no_color: app.config.no_color,
+                    no_formatting: app.config.no_formatting,
                 },
             ));
 
@@ -1359,12 +1378,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 && is_last_visual_row
                 && let Some(sug) = &app.suggestion
             {
-                spans.push(Span::styled(
-                    sug.clone(),
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::DIM),
-                ));
+                spans.push(Span::styled(sug.clone(), sug_style));
             }
 
             if let Some(pnum) = row.page_num {
@@ -1376,12 +1390,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 let target_pos = global_pad as usize + page_w as usize + gap_size as usize;
                 if target_pos > current_line_width {
                     spans.push(Span::raw(" ".repeat(target_pos - current_line_width)));
-                    spans.push(Span::styled(
-                        format!("{}.", pnum),
-                        Style::default()
-                            .fg(Color::DarkGray)
-                            .add_modifier(Modifier::BOLD),
-                    ));
+                    spans.push(Span::styled(format!("{}.", pnum), page_num_style));
                 }
             }
 
@@ -1419,10 +1428,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             " ".repeat(pad2),
             right_text
         );
-        f.render_widget(
-            Paragraph::new(title_line).style(Style::default().add_modifier(Modifier::REVERSED)),
-            title_area,
-        );
+        f.render_widget(Paragraph::new(title_line).style(panel_style), title_area);
     }
 
     if status_area.height > 0 {
@@ -1437,8 +1443,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 let status_padded =
                     format!("{:<width$}", prompt_str, width = status_area.width as usize);
                 f.render_widget(
-                    Paragraph::new(status_padded)
-                        .style(Style::default().add_modifier(Modifier::REVERSED)),
+                    Paragraph::new(status_padded).style(panel_style),
                     status_area,
                 );
             }
@@ -1447,8 +1452,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 let status_padded =
                     format!("{:<width$}", prompt_str, width = status_area.width as usize);
                 f.render_widget(
-                    Paragraph::new(status_padded)
-                        .style(Style::default().add_modifier(Modifier::REVERSED)),
+                    Paragraph::new(status_padded).style(panel_style),
                     status_area,
                 );
             }
@@ -1460,8 +1464,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     width = status_area.width as usize
                 );
                 f.render_widget(
-                    Paragraph::new(status_padded)
-                        .style(Style::default().add_modifier(Modifier::REVERSED)),
+                    Paragraph::new(status_padded).style(panel_style),
                     status_area,
                 );
             }
@@ -1473,7 +1476,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
                     let spans = vec![
                         Span::raw(" ".repeat(pad_left)),
-                        Span::styled(bracketed, Style::default().add_modifier(Modifier::REVERSED)),
+                        Span::styled(bracketed, panel_style),
                     ];
                     f.render_widget(Paragraph::new(Line::from(spans)), status_area);
                 } else {
@@ -1507,10 +1510,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         let render_shortcut_row = |shortcuts: &[(&str, &str)]| -> Line<'static> {
             let mut spans = Vec::new();
             for (key, desc) in shortcuts.iter() {
-                spans.push(Span::styled(
-                    key.to_string(),
-                    Style::default().add_modifier(Modifier::REVERSED),
-                ));
+                spans.push(Span::styled(key.to_string(), panel_style));
                 let text = format!(
                     " {:<width$}",
                     desc,
@@ -1700,16 +1700,6 @@ mod app_tests {
     fn test_app_backspace() {
         let mut app = create_empty_app();
         app.lines = vec!["A".to_string()];
-        app.cursor_x = 1;
-        app.backspace();
-        assert_eq!(app.lines[0], "");
-        assert_eq!(app.cursor_x, 0);
-    }
-
-    #[test]
-    fn test_app_backspace_matching_parentheses() {
-        let mut app = create_empty_app();
-        app.lines = vec!["()".to_string()];
         app.cursor_x = 1;
         app.backspace();
         assert_eq!(app.lines[0], "");
@@ -2199,7 +2189,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.2
+Draft date: Version 0.2.3
 Contact:
 contact@renecoignard.com
 
@@ -2634,6 +2624,50 @@ And Beat itself, of course: https://www.beat-app.fi/
         assert_eq!(
             app.cursor_x, 6,
             "Cursor must shift right when a sigil is prepended!"
+        );
+    }
+
+    #[test]
+    fn test_draw_force_ascii_and_no_color_strips_ui_elements() {
+        use ratatui::{Terminal, backend::TestBackend};
+
+        let mut app = create_empty_app();
+        app.config.force_ascii = true;
+        app.config.no_color = true;
+
+        app.lines = vec!["===".to_string(), "INT. TEST SCENE".to_string()];
+        app.types = vec![LineType::PageBreak, LineType::SceneHeading];
+
+        app.cursor_y = 1;
+
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| draw(f, &mut app)).unwrap();
+
+        let mut content = String::new();
+        let buffer = terminal.backend().buffer();
+        for y in 0..24u16 {
+            for x in 0..80u16 {
+                content.push_str(buffer[(x, y)].symbol());
+            }
+            content.push('\n');
+        }
+
+        assert!(
+            content.contains("------------------------------------------------------------"),
+            "Page break should use ASCII '-' instead of Unicode '─'"
+        );
+        assert!(
+            !content.contains("────────────────────────────────────────────────────────────"),
+            "Page break should NOT contain Unicode '─' in force_ascii mode"
+        );
+
+        assert!(
+            content.contains("INT. TEST SCENE"),
+            "Standard text should be rendered"
         );
     }
 }

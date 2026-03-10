@@ -1,6 +1,6 @@
 [package]
 name = "lottie"
-version = "0.2.2"
+version = "0.2.3"
 authors = [
     "René Coignard <contact@renecoignard.com>"
 ]
@@ -16,10 +16,12 @@ exclude = [".github/*"]
 
 [dependencies]
 clap = { version = "4.5.60", features = ["derive"] }
-crossterm = "0.29"
-ratatui = "0.30"
+crossterm = "0.29.0"
+ratatui = "0.30.0"
 regex = "1.12.3"
 unicode-width = "0.2.2"
+supports-color = "3.0.2"
+supports-unicode = "3.0.0"
 
 [profile.release]
 strip = true

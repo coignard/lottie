@@ -93,26 +93,26 @@ impl LineType {
 }
 
 pub fn base_style(lt: LineType, config: &Config) -> Style {
-    match lt {
+    let mut style = match lt {
         LineType::SceneHeading => {
-            let mut style = Style::default().fg(Color::White);
+            let mut s = Style::default().fg(Color::White);
             if config.heading_style.contains("bold") {
-                style = style.add_modifier(Modifier::BOLD);
+                s = s.add_modifier(Modifier::BOLD);
             }
             if config.heading_style.contains("underline") {
-                style = style.add_modifier(Modifier::UNDERLINED);
+                s = s.add_modifier(Modifier::UNDERLINED);
             }
-            style
+            s
         }
         LineType::Shot => {
-            let mut style = Style::default().fg(Color::White);
+            let mut s = Style::default().fg(Color::White);
             if config.shot_style.contains("bold") {
-                style = style.add_modifier(Modifier::BOLD);
+                s = s.add_modifier(Modifier::BOLD);
             }
             if config.shot_style.contains("underline") {
-                style = style.add_modifier(Modifier::UNDERLINED);
+                s = s.add_modifier(Modifier::UNDERLINED);
             }
-            style
+            s
         }
         LineType::Character | LineType::DualDialogueCharacter => Style::default()
             .fg(Color::White)
@@ -131,7 +131,20 @@ pub fn base_style(lt: LineType, config: &Config) -> Style {
         }
         LineType::PageBreak => Style::default().fg(Color::DarkGray),
         LineType::Action | LineType::Empty => Style::default(),
+    };
+
+    if config.no_color {
+        style.fg = None;
+        style.bg = None;
+        style.underline_color = None;
     }
+
+    if config.no_formatting {
+        style.add_modifier = Modifier::empty();
+        style.sub_modifier = Modifier::empty();
+    }
+
+    style
 }
 
 pub fn get_marker_color(note_text: &str) -> Option<Color> {
@@ -270,5 +283,56 @@ mod types_tests {
             Some(Color::Rgb(255, 165, 0))
         );
         assert_eq!(get_marker_color("just a plain note"), None);
+    }
+
+    #[test]
+    fn test_base_style_no_color_strips_color_only() {
+        let mut config = Config::default();
+        config.no_color = true;
+
+        let style_heading = base_style(LineType::SceneHeading, &config);
+        let style_char = base_style(LineType::Character, &config);
+        let style_lyrics = base_style(LineType::Lyrics, &config);
+
+        assert_eq!(style_heading.fg, None);
+        assert_eq!(style_char.fg, None);
+        assert_eq!(style_lyrics.fg, None);
+
+        assert!(style_heading.add_modifier.contains(Modifier::BOLD));
+        assert!(style_char.add_modifier.contains(Modifier::BOLD));
+        assert!(style_lyrics.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn test_base_style_no_formatting_strips_modifiers() {
+        let mut config = Config::default();
+        config.no_formatting = true;
+
+        let style_heading = base_style(LineType::SceneHeading, &config);
+        let style_char = base_style(LineType::Character, &config);
+        let style_lyrics = base_style(LineType::Lyrics, &config);
+
+        assert!(!style_heading.add_modifier.contains(Modifier::BOLD));
+        assert!(!style_char.add_modifier.contains(Modifier::BOLD));
+        assert!(!style_lyrics.add_modifier.contains(Modifier::ITALIC));
+
+        assert_eq!(style_heading.fg, Some(Color::White));
+        assert_eq!(style_char.fg, Some(Color::White));
+        assert_eq!(style_lyrics.fg, None);
+    }
+
+    #[test]
+    fn test_base_style_no_color_and_no_formatting() {
+        let mut config = Config::default();
+        config.no_color = true;
+        config.no_formatting = true;
+
+        let style_heading = base_style(LineType::SceneHeading, &config);
+        let style_char = base_style(LineType::Character, &config);
+        let style_lyrics = base_style(LineType::Lyrics, &config);
+
+        assert_eq!(style_heading, Style::default());
+        assert_eq!(style_char, Style::default());
+        assert_eq!(style_lyrics, Style::default());
     }
 }

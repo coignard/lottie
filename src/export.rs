@@ -182,6 +182,8 @@ pub fn export_document(
                 exclude_comments: true,
                 char_offset: row.char_start,
                 meta_key_end,
+                no_color: config.no_color || !with_ansi,
+                no_formatting: config.no_formatting || !with_ansi,
             },
         );
 
@@ -229,7 +231,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.2
+Draft date: Version 0.2.3
 Contact:
 contact@renecoignard.com
 
@@ -424,6 +426,33 @@ And Beat itself, of course: https://www.beat-app.fi/
                 "{}\x1b[3mMeine Damen, meine Herrn, danke\x1b[0m",
                 " ".repeat(26)
             )
+        );
+    }
+
+    #[test]
+    fn test_export_force_ascii_page_break() {
+        use crate::types::LineType;
+
+        let mut config = Config::default();
+        config.force_ascii = true;
+
+        let lines = vec!["===".to_string()];
+        let types = vec![LineType::PageBreak];
+
+        let layout = build_layout(&lines, &types, usize::MAX, &config);
+
+        let exported = export_document(&layout, &lines, &config, false);
+
+        let expected_line = "-".repeat(crate::types::PAGE_WIDTH as usize);
+        let unexpected_line = "─".repeat(crate::types::PAGE_WIDTH as usize);
+
+        assert!(
+            exported.contains(&expected_line),
+            "Exported document should contain ASCII dashes"
+        );
+        assert!(
+            !exported.contains(&unexpected_line),
+            "Exported document should NOT contain Unicode box drawing characters"
         );
     }
 }

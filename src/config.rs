@@ -89,6 +89,22 @@ pub struct Cli {
     #[arg(long)]
     pub shot_style: Option<String>,
 
+    /// Disable color formatting
+    #[arg(long)]
+    pub no_color: bool,
+
+    /// Disable text formatting (bold, italic, underline)
+    #[arg(long)]
+    pub no_formatting: bool,
+
+    /// Use ASCII characters instead of Unicode
+    #[arg(long)]
+    pub force_ascii: bool,
+
+    /// Force ANSI color output even if unsupported by the terminal
+    #[arg(long)]
+    pub force_ansi: bool,
+
     /// Export the rendered script to a file or stdout (use '-' or omit value for stdout)
     #[arg(long, value_name = "FILE", num_args = 0..=1, default_missing_value = "-")]
     pub export: Option<PathBuf>,
@@ -112,9 +128,14 @@ pub struct Config {
     pub auto_title_page: bool,
     pub typewriter_mode: bool,
     pub focus_mode: bool,
+    pub break_actions: bool,
+
+    pub no_color: bool,
+    pub no_formatting: bool,
+    pub force_ascii: bool,
+    pub force_ansi: bool,
 
     pub contd_extension: String,
-    pub break_actions: bool,
     pub heading_style: String,
     pub heading_spacing: usize,
     pub shot_style: String,
@@ -135,17 +156,91 @@ impl Default for Config {
             auto_title_page: false,
             typewriter_mode: false,
             focus_mode: false,
+            break_actions: true,
 
             contd_extension: "(CONT'D)".to_string(),
-            break_actions: true,
             heading_style: "bold".to_string(),
             heading_spacing: 1,
             shot_style: "bold".to_string(),
+
+            no_color: false,
+            no_formatting: false,
+            force_ascii: false,
+            force_ansi: false,
         }
     }
 }
 
 impl Config {
+    pub fn parse_config_str(&mut self, content: &str) {
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 2 {
+                let cmd = parts[0];
+                let key = parts[1];
+                let val = if parts.len() > 2 {
+                    parts[2..].join(" ").trim_matches('"').to_string()
+                } else {
+                    String::new()
+                };
+
+                if cmd == "set" {
+                    match key {
+                        "show_scene_numbers" => self.show_scene_numbers = true,
+                        "show_page_numbers" => self.show_page_numbers = true,
+                        "hide_markup" => self.hide_markup = true,
+                        "autocomplete" => self.autocomplete = true,
+                        "auto_contd" => self.auto_contd = true,
+                        "auto_paragraph_breaks" => self.auto_paragraph_breaks = true,
+                        "match_parentheses" => self.match_parentheses = true,
+                        "close_elements" => self.close_elements = true,
+                        "auto_title_page" => self.auto_title_page = true,
+                        "typewriter_mode" => self.typewriter_mode = true,
+                        "focus_mode" => self.focus_mode = true,
+                        "break_actions" => self.break_actions = true,
+                        "contd_extension" => self.contd_extension = val,
+                        "heading_style" => self.heading_style = val,
+                        "heading_spacing" => {
+                            if let Ok(v) = val.parse() {
+                                self.heading_spacing = v
+                            }
+                        }
+                        "shot_style" => self.shot_style = val,
+                        "no_color" => self.no_color = true,
+                        "no_formatting" => self.no_formatting = true,
+                        "force_ascii" => self.force_ascii = true,
+                        "force_ansi" => self.force_ansi = true,
+                        _ => {}
+                    }
+                } else if cmd == "unset" {
+                    match key {
+                        "show_scene_numbers" => self.show_scene_numbers = false,
+                        "show_page_numbers" => self.show_page_numbers = false,
+                        "hide_markup" => self.hide_markup = false,
+                        "autocomplete" => self.autocomplete = false,
+                        "auto_contd" => self.auto_contd = false,
+                        "auto_paragraph_breaks" => self.auto_paragraph_breaks = false,
+                        "match_parentheses" => self.match_parentheses = false,
+                        "close_elements" => self.close_elements = false,
+                        "auto_title_page" => self.auto_title_page = false,
+                        "typewriter_mode" => self.typewriter_mode = false,
+                        "focus_mode" => self.focus_mode = false,
+                        "break_actions" => self.break_actions = false,
+                        "no_color" => self.no_color = false,
+                        "no_formatting" => self.no_formatting = false,
+                        "force_ascii" => self.force_ascii = false,
+                        "force_ansi" => self.force_ansi = false,
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
     pub fn load(cli: &Cli) -> Self {
         let mut config = Self::default();
 
@@ -158,102 +253,27 @@ impl Config {
         let config_path = config_dir.join("lottie").join("lottie.conf");
 
         if let Ok(content) = fs::read_to_string(&config_path) {
-            for line in content.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    let cmd = parts[0];
-                    let key = parts[1];
-                    let val = if parts.len() > 2 {
-                        parts[2..].join(" ").trim_matches('"').to_string()
-                    } else {
-                        String::new()
-                    };
-
-                    if cmd == "set" {
-                        match key {
-                            "show_scene_numbers" => config.show_scene_numbers = true,
-                            "show_page_numbers" => config.show_page_numbers = true,
-                            "hide_markup" => config.hide_markup = true,
-                            "autocomplete" => config.autocomplete = true,
-                            "auto_contd" => config.auto_contd = true,
-                            "auto_paragraph_breaks" => config.auto_paragraph_breaks = true,
-                            "match_parentheses" => config.match_parentheses = true,
-                            "close_elements" => config.close_elements = true,
-                            "auto_title_page" => config.auto_title_page = true,
-                            "typewriter_mode" => config.typewriter_mode = true,
-                            "focus_mode" => config.focus_mode = true,
-                            "break_actions" => config.break_actions = true,
-                            "contd_extension" => config.contd_extension = val,
-                            "heading_style" => config.heading_style = val,
-                            "heading_spacing" => {
-                                if let Ok(v) = val.parse() {
-                                    config.heading_spacing = v
-                                }
-                            }
-                            "shot_style" => config.shot_style = val,
-                            _ => {}
-                        }
-                    } else if cmd == "unset" {
-                        match key {
-                            "show_scene_numbers" => config.show_scene_numbers = false,
-                            "show_page_numbers" => config.show_page_numbers = false,
-                            "hide_markup" => config.hide_markup = false,
-                            "autocomplete" => config.autocomplete = false,
-                            "auto_contd" => config.auto_contd = false,
-                            "auto_paragraph_breaks" => config.auto_paragraph_breaks = false,
-                            "match_parentheses" => config.match_parentheses = false,
-                            "close_elements" => config.close_elements = false,
-                            "auto_title_page" => config.auto_title_page = false,
-                            "typewriter_mode" => config.typewriter_mode = false,
-                            "focus_mode" => config.focus_mode = false,
-                            "break_actions" => config.break_actions = false,
-                            _ => {}
-                        }
-                    }
-                }
-            }
+            config.parse_config_str(&content);
         }
 
-        if cli.hide_scene_numbers {
-            config.show_scene_numbers = false;
-        }
-        if cli.hide_page_numbers {
-            config.show_page_numbers = false;
-        }
-        if cli.show_markup {
-            config.hide_markup = false;
-        }
-        if cli.no_autocomplete {
-            config.autocomplete = false;
-        }
-        if cli.no_auto_contd {
-            config.auto_contd = false;
-        }
-        if cli.no_auto_paragraph_breaks {
-            config.auto_paragraph_breaks = false;
-        }
-        if cli.no_match_parentheses {
-            config.match_parentheses = false;
-        }
-        if cli.no_close_elements {
-            config.close_elements = false;
-        }
-        if cli.auto_title_page {
-            config.auto_title_page = true;
-        }
-        if cli.typewriter_mode {
-            config.typewriter_mode = true;
-        }
-        if cli.focus_mode {
-            config.focus_mode = true;
-        }
-        if cli.no_break_actions {
-            config.break_actions = false;
-        }
+        config.show_scene_numbers &= !cli.hide_scene_numbers;
+        config.show_page_numbers &= !cli.hide_page_numbers;
+        config.hide_markup &= !cli.show_markup;
+        config.autocomplete &= !cli.no_autocomplete;
+        config.auto_contd &= !cli.no_auto_contd;
+        config.auto_paragraph_breaks &= !cli.no_auto_paragraph_breaks;
+        config.match_parentheses &= !cli.no_match_parentheses;
+        config.close_elements &= !cli.no_close_elements;
+        config.break_actions &= !cli.no_break_actions;
+
+        config.auto_title_page |= cli.auto_title_page;
+        config.typewriter_mode |= cli.typewriter_mode;
+        config.focus_mode |= cli.focus_mode;
+        config.no_color |= cli.no_color;
+        config.no_formatting |= cli.no_formatting;
+        config.force_ascii |= cli.force_ascii;
+        config.force_ansi |= cli.force_ansi;
+
         if let Some(ref ext) = cli.contd_extension {
             config.contd_extension = ext.clone();
         }
@@ -265,6 +285,17 @@ impl Config {
         }
         if let Some(ref style) = cli.shot_style {
             config.shot_style = style.clone();
+        }
+
+        let supports_unicode = supports_unicode::on(supports_unicode::Stream::Stdout);
+        let supports_color = supports_color::on(supports_color::Stream::Stdout).is_some();
+
+        config.force_ascii |= !supports_unicode;
+
+        if config.force_ansi {
+            config.no_color = false;
+        } else if !supports_color {
+            config.no_color = true;
         }
 
         config
@@ -290,9 +321,63 @@ mod config_tests {
         assert!(!config.typewriter_mode);
         assert!(!config.focus_mode);
         assert!(config.break_actions);
+        assert!(!config.no_color);
+        assert!(!config.no_formatting);
+        assert!(!config.force_ascii);
+        assert!(!config.force_ansi);
         assert_eq!(config.contd_extension, "(CONT'D)");
         assert_eq!(config.heading_style, "bold");
         assert_eq!(config.heading_spacing, 1);
         assert_eq!(config.shot_style, "bold");
+    }
+
+    #[test]
+    fn test_config_parsing_appearance_flags() {
+        let mut config = Config::default();
+
+        let mock_file_content = "
+            set no_color
+            set no_formatting
+            set force_ascii
+            set force_ansi
+        ";
+
+        config.parse_config_str(mock_file_content);
+
+        assert!(config.no_color, "no_color should be set by parsing");
+        assert!(
+            config.no_formatting,
+            "no_formatting should be set by parsing"
+        );
+        assert!(config.force_ascii, "force_ascii should be set by parsing");
+        assert!(config.force_ansi, "force_ansi should be set by parsing");
+    }
+
+    #[test]
+    fn test_cli_overrides_for_appearance() {
+        let mut cli = Cli::default();
+        cli.force_ascii = true;
+        cli.no_color = true;
+        cli.no_formatting = true;
+
+        let config = Config::load(&cli);
+        assert!(config.no_color);
+        assert!(config.no_formatting);
+        assert!(config.force_ascii);
+        assert!(!config.force_ansi);
+    }
+
+    #[test]
+    fn test_force_ansi_overrides_no_color() {
+        let mut cli = Cli::default();
+        cli.no_color = true;
+        cli.force_ansi = true;
+
+        let config = Config::load(&cli);
+        assert!(
+            !config.no_color,
+            "force_ansi should override no_color to false"
+        );
+        assert!(config.force_ansi);
     }
 }

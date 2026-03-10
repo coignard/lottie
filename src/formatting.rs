@@ -153,6 +153,8 @@ pub struct RenderConfig {
     pub exclude_comments: bool,
     pub char_offset: usize,
     pub meta_key_end: usize,
+    pub no_color: bool,
+    pub no_formatting: bool,
 }
 
 pub fn render_inline(
@@ -184,29 +186,34 @@ pub fn render_inline(
         }
 
         let mut s = base;
-        let is_key = global_i < cfg.meta_key_end;
 
-        if fmt.bold.contains(&global_i) {
-            s.add_modifier = s.add_modifier.union(Modifier::BOLD);
-        }
-        if fmt.italic.contains(&global_i) || fmt.note.contains(&global_i) {
-            s.add_modifier = s.add_modifier.union(Modifier::ITALIC);
-        }
-        if fmt.underlined.contains(&global_i) {
-            s.add_modifier = s.add_modifier.union(Modifier::UNDERLINED);
+        if !cfg.no_formatting {
+            if fmt.bold.contains(&global_i) {
+                s.add_modifier = s.add_modifier.union(Modifier::BOLD);
+            }
+            if fmt.italic.contains(&global_i) || fmt.note.contains(&global_i) {
+                s.add_modifier = s.add_modifier.union(Modifier::ITALIC);
+            }
+            if fmt.underlined.contains(&global_i) {
+                s.add_modifier = s.add_modifier.union(Modifier::UNDERLINED);
+            }
         }
 
-        if fmt.boneyard.contains(&global_i) {
-            s.fg = Some(Color::DarkGray);
-        } else if fmt.note.contains(&global_i) {
-            s.fg = Some(
-                fmt.note_color
-                    .get(&global_i)
-                    .copied()
-                    .unwrap_or(base.fg.unwrap_or(Color::Green)),
-            );
-        } else if is_key {
-            s.fg = Some(Color::DarkGray);
+        if !cfg.no_color {
+            let is_key = global_i < cfg.meta_key_end;
+
+            if fmt.boneyard.contains(&global_i) {
+                s.fg = Some(Color::DarkGray);
+            } else if fmt.note.contains(&global_i) {
+                s.fg = Some(
+                    fmt.note_color
+                        .get(&global_i)
+                        .copied()
+                        .unwrap_or(base.fg.unwrap_or(Color::Green)),
+                );
+            } else if is_key {
+                s.fg = Some(Color::DarkGray);
+            }
         }
 
         if s != current_style && !buf.is_empty() {
@@ -311,9 +318,9 @@ mod formatting_tests {
 
     #[test]
     fn test_parse_formatting_notes_with_color() {
-        let fmt = parse_formatting("[[blue note]]");
+        let fmt = parse_formatting("[[yellow note]]");
         assert!(fmt.note.contains(&5));
-        assert_eq!(fmt.note_color.get(&5), Some(&ratatui::style::Color::Blue));
+        assert_eq!(fmt.note_color.get(&5), Some(&ratatui::style::Color::Yellow));
     }
 
     #[test]
@@ -360,5 +367,109 @@ mod formatting_tests {
         assert_eq!(spans[0].style.fg, Some(ratatui::style::Color::DarkGray));
         assert_eq!(spans[1].content, "Text");
         assert_eq!(spans[1].style.fg, None);
+    }
+
+    #[test]
+    fn test_render_inline_no_color_only() {
+        let fmt = parse_formatting("**bold text** with [[yellow note]]");
+        let cfg = RenderConfig {
+            reveal_markup: true,
+            no_color: true,
+            no_formatting: false,
+            ..Default::default()
+        };
+
+        let spans = render_inline(
+            "**bold text** with [[yellow note]]",
+            Style::default(),
+            &fmt,
+            cfg,
+        );
+
+        let bold_span = spans.iter().find(|s| s.content.contains("bold")).unwrap();
+        assert_eq!(
+            bold_span.style.fg, None,
+            "Bold span color should be stripped"
+        );
+        assert!(
+            bold_span
+                .style
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD),
+            "Bold modifier should remain"
+        );
+
+        let note_span = spans.iter().find(|s| s.content.contains("yellow")).unwrap();
+        assert_eq!(note_span.style.fg, None, "Note color should be stripped");
+        assert!(
+            note_span
+                .style
+                .add_modifier
+                .contains(ratatui::style::Modifier::ITALIC),
+            "Note italic modifier should remain"
+        );
+    }
+
+    #[test]
+    fn test_render_inline_no_formatting_only() {
+        let fmt = parse_formatting("**bold text** with [[yellow note]]");
+        let cfg = RenderConfig {
+            reveal_markup: true,
+            no_color: false,
+            no_formatting: true,
+            ..Default::default()
+        };
+
+        let spans = render_inline(
+            "**bold text** with [[yellow note]]",
+            Style::default(),
+            &fmt,
+            cfg,
+        );
+
+        let bold_span = spans.iter().find(|s| s.content.contains("bold")).unwrap();
+        assert_eq!(
+            bold_span.style.add_modifier,
+            ratatui::style::Modifier::empty(),
+            "Bold modifier should be stripped"
+        );
+
+        let note_span = spans.iter().find(|s| s.content.contains("yellow")).unwrap();
+        assert_eq!(
+            note_span.style.add_modifier,
+            ratatui::style::Modifier::empty(),
+            "Note italic modifier should be stripped"
+        );
+        assert_eq!(
+            note_span.style.fg,
+            Some(ratatui::style::Color::Yellow),
+            "Note color should remain"
+        );
+    }
+
+    #[test]
+    fn test_render_inline_no_color_and_no_formatting() {
+        let fmt = parse_formatting("**bold text** with [[yellow note]]");
+        let cfg = RenderConfig {
+            reveal_markup: true,
+            no_color: true,
+            no_formatting: true,
+            ..Default::default()
+        };
+
+        let spans = render_inline(
+            "**bold text** with [[yellow note]]",
+            Style::default(),
+            &fmt,
+            cfg,
+        );
+
+        for span in spans {
+            assert_eq!(
+                span.style,
+                Style::default(),
+                "Everything should be stripped down to default style"
+            );
+        }
     }
 }

@@ -46,13 +46,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let mut app = App::new(in_path, cli.clone());
-        app.cursor_y = usize::MAX;
-        app.update_layout();
 
         let fmt = cli.format.to_lowercase();
         let with_ansi = match fmt.as_str() {
             "ansi" => true,
-            "plain" | "ascii" => false,
+            "ascii" => {
+                app.config.force_ascii = true;
+                false
+            }
+            "plain" => false,
             _ => {
                 eprintln!(
                     "Error: Unknown export format '{}'. Expected 'plain', 'ascii', or 'ansi'.",
@@ -61,6 +63,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::process::exit(1);
             }
         };
+
+        app.cursor_y = usize::MAX;
+        app.update_layout();
 
         let output = export::export_document(&app.layout, &app.lines, &app.config, with_ansi);
 
