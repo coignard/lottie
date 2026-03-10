@@ -149,6 +149,9 @@ set hide_markup
 # Typewriter mode
 unset typewriter_mode
 
+# Focus mode
+unset focus_mode
+
 ## Editor Behavior
 
 # Auto-complete scene headings (INT./EXT.) and character names.
@@ -192,6 +195,24 @@ set heading_spacing 1
 # Available values: "bold", "underline", "bold underline"
 set shot_style "bold"
 
+## Display & Terminal
+
+# Disable all terminal colors. Lottie will still render bold,
+# italic, and underline modifiers if supported by your terminal.
+# Lottie tries to detect color support automatically.
+unset no_color
+
+# Disable all text formatting (bold, italic, underline).
+unset no_formatting
+
+# Force output of ANSI color escape codes, even if Lottie detects
+# that your terminal does not support them.
+unset force_ansi
+
+# Force the use of ASCII characters instead of Unicode
+# (e.g., for page break lines). Useful for older terminals.
+# Lottie will try to detect Unicode support automatically.
+unset force_ascii
 ```
 
 A sample config is also included here in the repository.
