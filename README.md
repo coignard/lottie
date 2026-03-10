@@ -222,19 +222,26 @@ A sample config is also included here in the repository.
 ```
 --hide-scene-numbers         Hide scene numbers
 --hide-page-numbers          Hide page numbers
---show-markup                Show Fountain markup while editing
---no-autocomplete            Disable autocompletion
+--show-markup                Show formatting markup
+--no-autocomplete            Disable autocomplete
 --no-auto-contd              Disable automatic (CONT'D)
---no-auto-paragraph-breaks   Disable automatic blank lines after elements
+--no-auto-paragraph-breaks   Disable auto paragraph breaks
 --no-match-parentheses       Disable matching parentheses
---no-close-elements          Disable auto-closing of [[ ]], /* */ and **
---auto-title-page            Generate a title page template for new files
+--no-close-elements          Disable auto-closing elements
+--auto-title-page            Generate title page if file is new
 --typewriter-mode            Enable typewriter mode
---no-break-actions           Keep action blocks together across page breaks
+--focus-mode                 Enable focus mode
+--no-break-actions           Disable breaking actions across pages
 --contd-extension <text>     Set the (CONT'D) extension text
 --heading-style <style>      Set heading style, e.g. "bold underline"
---heading-spacing <n>        Set blank lines before scene headings
+--heading-spacing <n>        Set spacing before scene headings
 --shot-style <style>         Set shot style, e.g. "bold"
+--no-color                   Disable color formatting
+--no-formatting              Disable text formatting (bold, italic, underline)
+--force-ascii                Use ASCII characters instead of Unicode
+--force-ansi                 Force ANSI color output even if unsupported by the terminal
+--export [FILE]              Export rendered script to file or stdout
+--format <FORMAT>            Export format: plain, ascii, ansi (default: plain)
 ```
 
 ## Test
