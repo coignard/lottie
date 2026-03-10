@@ -119,8 +119,8 @@ pub fn base_style(lt: LineType, config: &Config) -> Style {
             .add_modifier(Modifier::BOLD),
         LineType::Parenthetical => Style::default().fg(Color::Gray),
         LineType::Dialogue => Style::default().fg(Color::White),
-        LineType::Transition => Style::default(),
-        LineType::Centered => Style::default(),
+        LineType::Transition => Style::default().fg(Color::Reset),
+        LineType::Centered => Style::default().fg(Color::Reset),
         LineType::Lyrics => Style::default().add_modifier(Modifier::ITALIC),
         LineType::Section | LineType::Synopsis => Style::default().fg(Color::Green),
         LineType::Note | LineType::Boneyard => Style::default()
@@ -130,7 +130,7 @@ pub fn base_style(lt: LineType, config: &Config) -> Style {
             Style::default().fg(Color::White)
         }
         LineType::PageBreak => Style::default().fg(Color::DarkGray),
-        LineType::Action | LineType::Empty => Style::default(),
+        LineType::Action | LineType::Empty => Style::default().fg(Color::Reset),
     };
 
     if config.no_color {
@@ -255,6 +255,13 @@ mod types_tests {
         let config = Config::default();
         let style = base_style(LineType::Lyrics, &config);
         assert!(style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn test_base_style_action_explicit_reset() {
+        let config = Config::default();
+        let style = base_style(LineType::Action, &config);
+        assert_eq!(style.fg, Some(Color::Reset));
     }
 
     #[test]

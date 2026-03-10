@@ -70,6 +70,7 @@ pub struct App {
     pub cursor_y: usize,
     pub cursor_x: usize,
     pub target_visual_x: u16,
+    pub visible_height: usize,
     pub scroll: usize,
 
     pub characters: HashSet<String>,
@@ -130,6 +131,7 @@ impl App {
             cursor_y: 0,
             cursor_x: 0,
             target_visual_x: 0,
+            visible_height: 0,
             scroll: 0,
             characters: HashSet::new(),
             locations: HashSet::new(),
@@ -620,6 +622,20 @@ impl App {
     pub fn move_end(&mut self) {
         self.last_edit = LastEdit::Other;
         self.cursor_x = self.line_len(self.cursor_y);
+    }
+
+    pub fn move_page_up(&mut self) {
+        let height = self.visible_height.max(1);
+        for _ in 0..height {
+            self.move_up();
+        }
+    }
+
+    pub fn move_page_down(&mut self) {
+        let height = self.visible_height.max(1);
+        for _ in 0..height {
+            self.move_down();
+        }
     }
 
     pub fn byte_of(&self, y: usize, cx: usize) -> usize {
@@ -1201,6 +1217,16 @@ impl App {
                             self.move_down();
                             *cursor_moved = true;
                         }
+                        KeyCode::PageUp => {
+                            self.move_page_up();
+                            *update_target_x = true;
+                            *cursor_moved = true;
+                        }
+                        KeyCode::PageDown => {
+                            self.move_page_down();
+                            *update_target_x = true;
+                            *cursor_moved = true;
+                        }
                         KeyCode::Left if ctrl => {
                             self.move_word_left();
                             *update_target_x = true;
@@ -1286,6 +1312,8 @@ impl App {
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
+    f.render_widget(ratatui::widgets::Clear, area);
+
     let is_prompt = app.mode != AppMode::Normal;
     let has_status = app.status_msg.is_some();
 
@@ -1310,6 +1338,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         (chunks[0], chunks[1], chunks[2], chunks[3]);
 
     let height = text_area.height as usize;
+    app.visible_height = height;
     let page_w = PAGE_WIDTH.min(text_area.width);
     let global_pad = text_area.width.saturating_sub(page_w) / 2;
 
@@ -1333,12 +1362,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         dark_gray_style.fg = Some(Color::DarkGray);
     }
 
-    let mut sug_style = Style::default().add_modifier(Modifier::DIM);
+    let mut sug_style = Style::default();
+    if !app.config.no_formatting {
+        sug_style = sug_style.add_modifier(Modifier::DIM);
+    }
     if !app.config.no_color {
         sug_style.fg = Some(Color::DarkGray);
     }
 
-    let mut page_num_style = Style::default().add_modifier(Modifier::BOLD);
+    let mut page_num_style = Style::default();
+    if !app.config.no_formatting {
+        page_num_style = page_num_style.add_modifier(Modifier::BOLD);
+    }
     if !app.config.no_color {
         page_num_style.fg = Some(Color::DarkGray);
     }
@@ -1946,6 +1981,22 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_search_regex_not_found() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Just text".to_string()];
+        app.search_query = "unicorn".to_string();
+
+        app.execute_search();
+
+        assert_eq!(app.cursor_y, 0, "Cursor should not move");
+        assert_eq!(app.status_msg.as_deref(), Some("\"unicorn\" not found"));
+        assert!(
+            !app.show_search_highlight,
+            "Highlight should be disabled if not found"
+        );
+    }
+
+    #[test]
     fn test_app_tab_state_machine_empty_to_char() {
         let mut app = create_empty_app();
         app.lines = vec!["".to_string()];
@@ -2264,11 +2315,69 @@ mod app_tests {
     }
 
     #[test]
+    fn test_draw_no_formatting_page_numbers() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+        app.config.no_formatting = true;
+
+        app.lines = vec!["Action line".to_string()];
+        app.types = vec![LineType::Action];
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut found = false;
+        for y in 0..24 {
+            for x in 0..80 {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == "1" {
+                    assert!(
+                        !cell.modifier.contains(Modifier::BOLD),
+                        "Page number should not be bold when no_formatting is true"
+                    );
+                    found = true;
+                }
+            }
+        }
+        assert!(found, "Page number not found");
+    }
+
+    #[test]
+    fn test_draw_panel_style_resets_color() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+        app.set_status("Test status");
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let status_cell = &buffer[(0, 22)];
+        assert_eq!(
+            status_cell.fg,
+            Color::Reset,
+            "Panel should explicitly reset foreground color"
+        );
+        assert_eq!(
+            status_cell.bg,
+            Color::Reset,
+            "Panel should explicitly reset background color"
+        );
+        assert!(status_cell.modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
     fn test_e2e_tutorial_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.3
+Draft date: Version 0.2.4
 Contact:
 contact@renecoignard.com
 
@@ -2788,22 +2897,6 @@ And Beat itself, of course: https://www.beat-app.fi/
     }
 
     #[test]
-    fn test_search_regex_not_found() {
-        let mut app = create_empty_app();
-        app.lines = vec!["Just text".to_string()];
-        app.search_query = "unicorn".to_string();
-
-        app.execute_search();
-
-        assert_eq!(app.cursor_y, 0, "Cursor should not move");
-        assert_eq!(app.status_msg.as_deref(), Some("\"unicorn\" not found"));
-        assert!(
-            !app.show_search_highlight,
-            "Highlight should be disabled if not found"
-        );
-    }
-
-    #[test]
     fn test_search_regex_utf8_multibyte_safety() {
         let mut app = create_empty_app();
 
@@ -2856,5 +2949,20 @@ And Beat itself, of course: https://www.beat-app.fi/
             text_ch,
             "Text changed flag should trigger redraw to clear highlights"
         );
+    }
+
+    #[test]
+    fn test_move_page_down_and_up() {
+        let mut app = create_empty_app();
+        app.lines = (0..50).map(|i| format!("Line {}", i)).collect();
+        app.parse_document();
+        app.update_layout();
+        app.visible_height = 10;
+
+        app.move_page_down();
+        assert_eq!(app.cursor_y, 10);
+
+        app.move_page_up();
+        assert_eq!(app.cursor_y, 0);
     }
 }

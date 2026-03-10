@@ -42,6 +42,7 @@ fn style_to_ansi(style: Style, text: &str) -> String {
 
     if let Some(fg) = style.fg {
         match fg {
+            Color::Reset => {}
             Color::Black => ansi.push_str("\x1b[30m"),
             Color::Red => ansi.push_str("\x1b[31m"),
             Color::Green => ansi.push_str("\x1b[32m"),
@@ -59,7 +60,7 @@ fn style_to_ansi(style: Style, text: &str) -> String {
 
     ansi.push_str(text);
 
-    if !style.add_modifier.is_empty() || style.fg.is_some() {
+    if !style.add_modifier.is_empty() || style.fg.is_some_and(|c| !matches!(c, Color::Reset)) {
         ansi.push_str("\x1b[0m");
     }
 
@@ -233,7 +234,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.3
+Draft date: Version 0.2.4
 Contact:
 contact@renecoignard.com
 

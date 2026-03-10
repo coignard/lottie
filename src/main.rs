@@ -81,8 +81,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let default_panic = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
+        let mut stdout = io::stdout();
+        let (_, rows) = crossterm::terminal::size().unwrap_or((0, 24));
+        let _ = execute!(stdout, crossterm::cursor::MoveTo(0, rows));
+
         let _ = disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture);
+        let _ = execute!(
+            stdout,
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+            LeaveAlternateScreen,
+            DisableMouseCapture,
+            crossterm::cursor::Show
+        );
+        println!();
         default_panic(info);
     }));
 
@@ -94,6 +105,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut term = Terminal::new(backend)?;
+
+    term.clear()?;
 
     loop {
         term.draw(|f| draw(f, &mut app))?;
@@ -120,14 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &mut text_changed,
                 &mut cursor_moved,
             )? {
-                disable_raw_mode()?;
-                execute!(
-                    term.backend_mut(),
-                    LeaveAlternateScreen,
-                    DisableMouseCapture
-                )?;
-                term.show_cursor()?;
-                return Ok(());
+                break;
             }
         }
 
@@ -144,6 +150,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             app.target_visual_x = app.current_visual_x();
         }
     }
+
+    term.clear()?;
+    let (_, rows) = crossterm::terminal::size().unwrap_or((0, 24));
+    execute!(term.backend_mut(), crossterm::cursor::MoveTo(0, rows))?;
 
     disable_raw_mode()?;
     execute!(
