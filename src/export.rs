@@ -230,6 +230,33 @@ mod export_tests {
     use crate::parser::Parser;
 
     #[test]
+    fn test_export_force_ascii_page_break() {
+        use crate::types::LineType;
+
+        let mut config = Config::default();
+        config.force_ascii = true;
+
+        let lines = vec!["===".to_string()];
+        let types = vec![LineType::PageBreak];
+
+        let layout = build_layout(&lines, &types, usize::MAX, &config);
+
+        let exported = export_document(&layout, &lines, &config, false);
+
+        let expected_line = "-".repeat(crate::types::PAGE_WIDTH as usize);
+        let unexpected_line = "─".repeat(crate::types::PAGE_WIDTH as usize);
+
+        assert!(
+            exported.contains(&expected_line),
+            "Exported document should contain ASCII dashes"
+        );
+        assert!(
+            !exported.contains(&unexpected_line),
+            "Exported document should NOT contain Unicode box drawing characters"
+        );
+    }
+
+    #[test]
     fn test_e2e_tutorial_export_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
@@ -429,33 +456,6 @@ And Beat itself, of course: https://www.beat-app.fi/
                 "{}\x1b[3mMeine Damen, meine Herrn, danke\x1b[0m",
                 " ".repeat(26)
             )
-        );
-    }
-
-    #[test]
-    fn test_export_force_ascii_page_break() {
-        use crate::types::LineType;
-
-        let mut config = Config::default();
-        config.force_ascii = true;
-
-        let lines = vec!["===".to_string()];
-        let types = vec![LineType::PageBreak];
-
-        let layout = build_layout(&lines, &types, usize::MAX, &config);
-
-        let exported = export_document(&layout, &lines, &config, false);
-
-        let expected_line = "-".repeat(crate::types::PAGE_WIDTH as usize);
-        let unexpected_line = "─".repeat(crate::types::PAGE_WIDTH as usize);
-
-        assert!(
-            exported.contains(&expected_line),
-            "Exported document should contain ASCII dashes"
-        );
-        assert!(
-            !exported.contains(&unexpected_line),
-            "Exported document should NOT contain Unicode box drawing characters"
         );
     }
 }

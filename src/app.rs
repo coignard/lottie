@@ -200,6 +200,11 @@ impl App {
     }
 
     pub fn report_cursor_position(&mut self) {
+        if self.lines.is_empty() {
+            self.set_status("line 1/1 (100%), col 1/1 (100%), char 1/1 (100%)");
+            return;
+        }
+
         let total_lines = self.lines.len().max(1);
         let cur_line = self.cursor_y + 1;
         let line_pct = (cur_line as f64 / total_lines as f64 * 100.0) as usize;
@@ -207,19 +212,26 @@ impl App {
         let current_line_text = self
             .lines
             .get(self.cursor_y)
-            .unwrap_or(&String::new())
-            .clone();
-        let total_cols = current_line_text.chars().count().max(1);
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let total_cols = current_line_text.chars().count() + 1;
         let cur_col = self.cursor_x + 1;
         let col_pct = (cur_col as f64 / total_cols as f64 * 100.0) as usize;
 
-        let total_chars: usize = self.lines.iter().map(|l| l.chars().count() + 1).sum();
-        let mut cur_char = 0;
-        for i in 0..self.cursor_y {
-            cur_char += self.lines[i].chars().count() + 1;
-        }
-        cur_char += self.cursor_x + 1;
-        let total_chars = total_chars.max(1);
+        let total_chars: usize = self
+            .lines
+            .iter()
+            .map(|l| l.chars().count() + 1)
+            .sum::<usize>()
+            .max(1);
+
+        let cur_char = self.lines[..self.cursor_y]
+            .iter()
+            .map(|l| l.chars().count() + 1)
+            .sum::<usize>()
+            + self.cursor_x
+            + 1;
+
         let char_pct = (cur_char as f64 / total_chars as f64 * 100.0) as usize;
 
         let msg = format!(
@@ -515,7 +527,11 @@ impl App {
 
     pub fn save(&mut self) -> io::Result<()> {
         if let Some(ref p) = self.file {
-            fs::write(p, self.lines.join("\n"))?;
+            let mut content = self.lines.join("\n");
+            if !content.ends_with('\n') {
+                content.push('\n');
+            }
+            fs::write(p, content)?;
             self.dirty = false;
             self.set_status(&format!("Wrote {} lines", self.lines.len()));
         }
@@ -2373,201 +2389,6 @@ mod app_tests {
     }
 
     #[test]
-    fn test_e2e_tutorial_integration() {
-        let tutorial_text = r#"Title: Lottie Tutorial
-Credit: Written by
-Author: René Coignard
-Draft date: Version 0.2.4
-Contact:
-contact@renecoignard.com
-
-INT. FLAT IN WOLFEN-NORD - DAY
-
-RENÉ sits at his desk, typing.
-
-RENÉ
-(turning round)
-Oh, hello there. It seems you've found my terminal Rust port of Beat. Sit back and I'll show you how everything works.
-
-I sometimes write screenplays on my Gentoo laptop, and doing it in plain nano isn't terribly comfortable (I work entirely in the terminal there). So I decided to put this port of Beat together. I used Beat's source code as a reference when writing Lottie, so things work more or less the same way.
-
-As you may have already noticed, the navigation is rather reminiscent of nano, because I did look at its source code and took inspiration, for the sake of authenticity. I'm rather fond of it, and I hope you will be too. Not quite as nerdy as vim, but honestly, I'm an average nano enjoyer and I'm not ashamed of it.
-
-Anyway, let's get into it.
-
-EXT. NORDPARK - DAY
-
-As I mentioned, things work much the same as in Beat. If you start a line with **int.** or **ext.**, Lottie will automatically turn it into a scene heading. You can also use tab: on an empty line, it will first turn it into a character cue, then a scene heading, and then a transition. If you simply start typing IN CAPS ON AN EMPTY LINE, LIKE SO, the text will automatically become a character cue.
-
-You can also use notes:
-
-/* Two sailors are walking along the deck, when one turns to the other and says: */
-
-SAILOR
-I'm not a sailor, actually.
-
-Lottie automatically inserts two blank lines after certain elements, just as Beat does, though this can be adjusted in the configuration file. There's a sample config in the repository; do make use of it. Bonus: try enabling typewriter mode and see what happens.
-
-To create a transition, simply write in capitals and end with a colon, like so:
-
-CUT TO:
-
-That alone is quite enough to write a proper screenplay. But there's more! For instance, we also have these:
-
-/*
-
-A multi-line comment.
-
-For very, very, very long notes.
-
-*/
-
-[[Comments can look like this as well. They don't differ much from other comment types, but for compatibility with Beat, all the same comment types are supported.]]
-
-# This is a new section
-
-= And this is a synopsis.
-
-INT. EDEKA - ABEND
-
-Unlike Beat, there's no full render or PDF export here, but you can always save your screenplay and open it in Beat to do that. In Beat, synopses wouldn't appear in the rendered script, nor would comments. Which is why they share the same colour here, incidentally.
-
-As you may have noticed, there's support for **bold text**, *italics*, and even _underlined text_. When your cursor isn't on a line containing these markers, they'll be hidden from view. Move onto the line, and you'll see all the asterisks and underscores that produce the formatting.
-
-Centred text is supported as well, and works like this:
-
->Centred text<
-
-You can also force transitions:
-
->AN ABRUPT TRANSITION TO THE NEXT SCENE:
-
-EXT. WOLFEN(BITTERFELD) RAILWAY STATION - MORNING
-
-Lyrics are supported too, using a tilde at the start of the line:
-
-~Meine Damen, meine Herrn, danke
-~Dass Sie mit uns reisen
-~Zu abgefahrenen Preisen
-~Auf abgefahrenen Gleisen
-~Für Ihre Leidensfähigkeit, danken wir spontan
-~Sänk ju for träweling wis Deutsche Bahn
-
-That's Wise Guys. Onwards.
-
-EXT. LEIPZIG HBF - MORNING
-
-Well, do have a go on it, write something from scratch, or edit this screenplay. You might even turn up a bug or two; if so, please do let me know :-) Everything seemed to behave itself while I was putting this tutorial together, and I hope it all runs just as smoothly for you. I hope you enjoy working in Lottie.
-
-[[marker Speaking of which, I named the application after a certain Charlotte I once knew, who wrote quite wonderful screenplays.]]
-[[marker blue The colour of these comment markers can be changed, as you can see.]]
-
-You can find more information about the Fountain markup language at https://www.fountain.io/
-
-And Beat itself, of course: https://www.beat-app.fi/
-
-> FADE OUT"#;
-
-        let mut app = App::new(None, crate::config::Cli::default());
-        app.lines = tutorial_text.lines().map(|s| s.to_string()).collect();
-        app.cursor_y = 0;
-        app.cursor_x = 0;
-
-        app.parse_document();
-        app.update_layout();
-
-        let get_exact_idx =
-            |search_str: &str| -> usize { app.lines.iter().position(|l| l == search_str).unwrap() };
-        let get_idx = |search_str: &str| -> usize {
-            app.lines
-                .iter()
-                .position(|l| l.starts_with(search_str))
-                .unwrap()
-        };
-
-        let meta_title_idx = get_idx("Title:");
-        let meta_val_idx = get_idx("contact@renecoignard");
-        let scene1_idx = get_idx("INT. FLAT");
-
-        let char1_idx = get_exact_idx("RENÉ");
-
-        let paren_idx = get_idx("(turning round)");
-        let dial_idx = get_idx("Oh, hello there");
-        let boneyard1_idx = get_idx("/* Two sailors");
-        let trans1_idx = get_exact_idx("CUT TO:");
-        let boneyard_multiline_idx = get_exact_idx("/*");
-        let section_idx = get_idx("# This is");
-        let syn_idx = get_idx("= And this");
-        let inline_note_idx = get_idx("[[Comments");
-        let markup_idx = get_idx("As you may have noticed, there's support for");
-        let center_idx = get_exact_idx(">Centred text<");
-        let force_trans_idx = get_idx(">AN ABRUPT");
-        let lyric1_idx = get_idx("~Meine Damen");
-        let lyric6_idx = get_idx("~Sänk ju");
-        let note_marker_idx = get_idx("[[marker blue");
-        let fade_out_idx = get_exact_idx("> FADE OUT");
-
-        assert_eq!(app.types[meta_title_idx], LineType::MetadataTitle);
-        assert_eq!(app.types[meta_val_idx], LineType::MetadataValue);
-        assert_eq!(app.types[scene1_idx], LineType::SceneHeading);
-        assert_eq!(app.types[char1_idx], LineType::Character);
-        assert_eq!(app.types[paren_idx], LineType::Parenthetical);
-        assert_eq!(app.types[dial_idx], LineType::Dialogue);
-        assert_eq!(app.types[boneyard1_idx], LineType::Boneyard);
-        assert_eq!(app.types[trans1_idx], LineType::Transition);
-        assert_eq!(app.types[boneyard_multiline_idx], LineType::Boneyard);
-        assert_eq!(app.types[section_idx], LineType::Section);
-        assert_eq!(app.types[syn_idx], LineType::Synopsis);
-        assert_eq!(app.types[inline_note_idx], LineType::Note);
-        assert_eq!(app.types[center_idx], LineType::Centered);
-        assert_eq!(app.types[force_trans_idx], LineType::Transition);
-        assert_eq!(app.types[lyric1_idx], LineType::Lyrics);
-        assert_eq!(app.types[lyric6_idx], LineType::Lyrics);
-        assert_eq!(app.types[note_marker_idx], LineType::Note);
-        assert_eq!(app.types[fade_out_idx], LineType::Transition);
-
-        let layout_markup = app
-            .layout
-            .iter()
-            .find(|r| r.line_idx == markup_idx)
-            .unwrap();
-        assert!(layout_markup.fmt.bold.len() > 0);
-        assert!(layout_markup.fmt.italic.len() > 0);
-        assert!(layout_markup.fmt.underlined.len() > 0);
-
-        let layout_note = app
-            .layout
-            .iter()
-            .find(|r| r.line_idx == note_marker_idx)
-            .unwrap();
-        assert!(layout_note.override_color.is_some());
-        assert_eq!(
-            layout_note.override_color.unwrap(),
-            ratatui::style::Color::Blue
-        );
-
-        let layout_scene = app
-            .layout
-            .iter()
-            .find(|r| r.line_idx == scene1_idx)
-            .unwrap();
-        assert_eq!(layout_scene.scene_num, Some(1));
-
-        let layout_trans = app
-            .layout
-            .iter()
-            .find(|r| r.line_idx == trans1_idx)
-            .unwrap();
-        let expected_indent = crate::types::PAGE_WIDTH.saturating_sub(7);
-        assert_eq!(layout_trans.indent, expected_indent);
-        assert_eq!(layout_trans.raw_text, "CUT TO:");
-
-        assert!(app.characters.contains("RENÉ"));
-        assert!(app.characters.contains("SAILOR"));
-        assert!(app.locations.contains("FLAT IN WOLFEN-NORD - DAY"));
-    }
-
-    #[test]
     fn test_ux_boundary_beginning_of_file() {
         let mut app = create_empty_app();
         app.lines = vec!["First".to_string()];
@@ -2964,5 +2785,462 @@ And Beat itself, of course: https://www.beat-app.fi/
 
         app.move_page_up();
         assert_eq!(app.cursor_y, 0);
+    }
+
+    #[test]
+    fn test_report_cursor_position_empty() {
+        let mut app = create_empty_app();
+        app.report_cursor_position();
+
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 1/1 (100%), col 1/1 (100%), char 1/1 (100%)"),
+            "Empty document should report 100% for all metrics"
+        );
+    }
+
+    #[test]
+    fn test_report_cursor_position_basic_math() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Hello".to_string()];
+        app.types = vec![LineType::Action];
+        app.update_layout();
+
+        app.cursor_y = 0;
+        app.cursor_x = 2;
+
+        app.report_cursor_position();
+
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 1/1 (100%), col 3/6 (50%), char 3/6 (50%)")
+        );
+    }
+
+    #[test]
+    fn test_report_cursor_position_soft_wrap() {
+        let mut app = create_empty_app();
+        let long_line = "A".repeat(100);
+        app.lines = vec![long_line];
+        app.types = vec![LineType::Action];
+        app.update_layout();
+
+        app.cursor_y = 0;
+        app.cursor_x = 70;
+
+        app.report_cursor_position();
+
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 1/1 (100%), col 71/101 (70%), char 71/101 (70%)"),
+            "Soft-wrapped lines count as one logical line"
+        );
+    }
+
+    #[test]
+    fn test_report_cursor_position_multi_line() {
+        let mut app = create_empty_app();
+        app.lines = vec!["One".to_string(), "Two".to_string(), "Three".to_string()];
+        app.types = vec![LineType::Action, LineType::Action, LineType::Action];
+        app.update_layout();
+
+        app.cursor_y = 1;
+        app.cursor_x = 1;
+
+        app.report_cursor_position();
+
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 2/3 (66%), col 2/4 (50%), char 6/14 (42%)")
+        );
+    }
+
+    #[test]
+    fn test_report_cursor_position_utf8_multibyte() {
+        let mut app = create_empty_app();
+
+        app.lines = vec!["Дратути 👋".to_string()];
+        app.types = vec![LineType::Action];
+        app.update_layout();
+
+        app.cursor_y = 0;
+        app.cursor_x = 8;
+
+        app.report_cursor_position();
+
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 1/1 (100%), col 9/10 (90%), char 9/10 (90%)"),
+            "Cursor metrics should count UTF-8 chars, not raw bytes"
+        );
+    }
+
+    #[test]
+    fn test_report_cursor_position_end_of_file() {
+        let mut app = create_empty_app();
+        app.lines = vec!["123".to_string(), "45".to_string()];
+        app.types = vec![LineType::Action, LineType::Action];
+        app.update_layout();
+
+        app.cursor_y = 1;
+        app.cursor_x = 2;
+
+        app.report_cursor_position();
+
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 2/2 (100%), col 3/3 (100%), char 7/7 (100%)"),
+            "Should safely handle cursor being positioned at the absolute end of the line"
+        );
+    }
+
+    #[test]
+    fn test_e2e_tutorial_integration() {
+        let tutorial_text = r#"Title: Lottie Tutorial
+Credit: Written by
+Author: René Coignard
+Draft date: Version 0.2.4
+Contact:
+contact@renecoignard.com
+
+INT. FLAT IN WOLFEN-NORD - DAY
+
+RENÉ sits at his desk, typing.
+
+RENÉ
+(turning round)
+Oh, hello there. It seems you've found my terminal Rust port of Beat. Sit back and I'll show you how everything works.
+
+I sometimes write screenplays on my Gentoo laptop, and doing it in plain nano isn't terribly comfortable (I work entirely in the terminal there). So I decided to put this port of Beat together. I used Beat's source code as a reference when writing Lottie, so things work more or less the same way.
+
+As you may have already noticed, the navigation is rather reminiscent of nano, because I did look at its source code and took inspiration, for the sake of authenticity. I'm rather fond of it, and I hope you will be too. Not quite as nerdy as vim, but honestly, I'm an average nano enjoyer and I'm not ashamed of it.
+
+Anyway, let's get into it.
+
+EXT. NORDPARK - DAY
+
+As I mentioned, things work much the same as in Beat. If you start a line with **int.** or **ext.**, Lottie will automatically turn it into a scene heading. You can also use tab: on an empty line, it will first turn it into a character cue, then a scene heading, and then a transition. If you simply start typing IN CAPS ON AN EMPTY LINE, LIKE SO, the text will automatically become a character cue.
+
+You can also use notes:
+
+/* Two sailors are walking along the deck, when one turns to the other and says: */
+
+SAILOR
+I'm not a sailor, actually.
+
+Lottie automatically inserts two blank lines after certain elements, just as Beat does, though this can be adjusted in the configuration file. There's a sample config in the repository; do make use of it. Bonus: try enabling typewriter mode and see what happens.
+
+To create a transition, simply write in capitals and end with a colon, like so:
+
+CUT TO:
+
+That alone is quite enough to write a proper screenplay. But there's more! For instance, we also have these:
+
+/*
+
+A multi-line comment.
+
+For very, very, very long notes.
+
+*/
+
+[[Comments can look like this as well. They don't differ much from other comment types, but for compatibility with Beat, all the same comment types are supported.]]
+
+# This is a new section
+
+= And this is a synopsis.
+
+INT. EDEKA - ABEND
+
+Unlike Beat, there's no full render or PDF export here, but you can always save your screenplay and open it in Beat to do that. In Beat, synopses wouldn't appear in the rendered script, nor would comments. Which is why they share the same colour here, incidentally.
+
+As you may have noticed, there's support for **bold text**, *italics*, and even _underlined text_. When your cursor isn't on a line containing these markers, they'll be hidden from view. Move onto the line, and you'll see all the asterisks and underscores that produce the formatting.
+
+Centred text is supported as well, and works like this:
+
+>Centred text<
+
+You can also force transitions:
+
+>AN ABRUPT TRANSITION TO THE NEXT SCENE:
+
+EXT. WOLFEN(BITTERFELD) RAILWAY STATION - MORNING
+
+Lyrics are supported too, using a tilde at the start of the line:
+
+~Meine Damen, meine Herrn, danke
+~Dass Sie mit uns reisen
+~Zu abgefahrenen Preisen
+~Auf abgefahrenen Gleisen
+~Für Ihre Leidensfähigkeit, danken wir spontan
+~Sänk ju for träweling wis Deutsche Bahn
+
+That's Wise Guys. Onwards.
+
+EXT. LEIPZIG HBF - MORNING
+
+Well, do have a go on it, write something from scratch, or edit this screenplay. You might even turn up a bug or two; if so, please do let me know :-) Everything seemed to behave itself while I was putting this tutorial together, and I hope it all runs just as smoothly for you. I hope you enjoy working in Lottie.
+
+[[marker Speaking of which, I named the application after a certain Charlotte I once knew, who wrote quite wonderful screenplays.]]
+[[marker blue The colour of these comment markers can be changed, as you can see.]]
+
+You can find more information about the Fountain markup language at https://www.fountain.io/
+
+And Beat itself, of course: https://www.beat-app.fi/
+
+> FADE OUT"#;
+
+        let mut app = App::new(None, crate::config::Cli::default());
+        app.lines = tutorial_text.lines().map(|s| s.to_string()).collect();
+        app.cursor_y = 0;
+        app.cursor_x = 0;
+
+        app.parse_document();
+        app.update_layout();
+
+        let get_exact_idx =
+            |search_str: &str| -> usize { app.lines.iter().position(|l| l == search_str).unwrap() };
+        let get_idx = |search_str: &str| -> usize {
+            app.lines
+                .iter()
+                .position(|l| l.starts_with(search_str))
+                .unwrap()
+        };
+
+        let meta_title_idx = get_idx("Title:");
+        let meta_val_idx = get_idx("contact@renecoignard");
+        let scene1_idx = get_idx("INT. FLAT");
+
+        let char1_idx = get_exact_idx("RENÉ");
+
+        let paren_idx = get_idx("(turning round)");
+        let dial_idx = get_idx("Oh, hello there");
+        let boneyard1_idx = get_idx("/* Two sailors");
+        let trans1_idx = get_exact_idx("CUT TO:");
+        let boneyard_multiline_idx = get_exact_idx("/*");
+        let section_idx = get_idx("# This is");
+        let syn_idx = get_idx("= And this");
+        let inline_note_idx = get_idx("[[Comments");
+        let markup_idx = get_idx("As you may have noticed, there's support for");
+        let center_idx = get_exact_idx(">Centred text<");
+        let force_trans_idx = get_idx(">AN ABRUPT");
+        let lyric1_idx = get_idx("~Meine Damen");
+        let lyric6_idx = get_idx("~Sänk ju");
+        let note_marker_idx = get_idx("[[marker blue");
+        let fade_out_idx = get_exact_idx("> FADE OUT");
+
+        assert_eq!(app.types[meta_title_idx], LineType::MetadataTitle);
+        assert_eq!(app.types[meta_val_idx], LineType::MetadataValue);
+        assert_eq!(app.types[scene1_idx], LineType::SceneHeading);
+        assert_eq!(app.types[char1_idx], LineType::Character);
+        assert_eq!(app.types[paren_idx], LineType::Parenthetical);
+        assert_eq!(app.types[dial_idx], LineType::Dialogue);
+        assert_eq!(app.types[boneyard1_idx], LineType::Boneyard);
+        assert_eq!(app.types[trans1_idx], LineType::Transition);
+        assert_eq!(app.types[boneyard_multiline_idx], LineType::Boneyard);
+        assert_eq!(app.types[section_idx], LineType::Section);
+        assert_eq!(app.types[syn_idx], LineType::Synopsis);
+        assert_eq!(app.types[inline_note_idx], LineType::Note);
+        assert_eq!(app.types[center_idx], LineType::Centered);
+        assert_eq!(app.types[force_trans_idx], LineType::Transition);
+        assert_eq!(app.types[lyric1_idx], LineType::Lyrics);
+        assert_eq!(app.types[lyric6_idx], LineType::Lyrics);
+        assert_eq!(app.types[note_marker_idx], LineType::Note);
+        assert_eq!(app.types[fade_out_idx], LineType::Transition);
+
+        let layout_markup = app
+            .layout
+            .iter()
+            .find(|r| r.line_idx == markup_idx)
+            .unwrap();
+        assert!(layout_markup.fmt.bold.len() > 0);
+        assert!(layout_markup.fmt.italic.len() > 0);
+        assert!(layout_markup.fmt.underlined.len() > 0);
+
+        let layout_note = app
+            .layout
+            .iter()
+            .find(|r| r.line_idx == note_marker_idx)
+            .unwrap();
+        assert!(layout_note.override_color.is_some());
+        assert_eq!(
+            layout_note.override_color.unwrap(),
+            ratatui::style::Color::Blue
+        );
+
+        let layout_scene = app
+            .layout
+            .iter()
+            .find(|r| r.line_idx == scene1_idx)
+            .unwrap();
+        assert_eq!(layout_scene.scene_num, Some(1));
+
+        let layout_trans = app
+            .layout
+            .iter()
+            .find(|r| r.line_idx == trans1_idx)
+            .unwrap();
+        let expected_indent = crate::types::PAGE_WIDTH.saturating_sub(7);
+        assert_eq!(layout_trans.indent, expected_indent);
+        assert_eq!(layout_trans.raw_text, "CUT TO:");
+
+        assert!(app.characters.contains("RENÉ"));
+        assert!(app.characters.contains("SAILOR"));
+        assert!(app.locations.contains("FLAT IN WOLFEN-NORD - DAY"));
+
+        let total_vis_lines = app.layout.len();
+        assert!(total_vis_lines > 0, "Layout must not be empty");
+
+        let test_coordinates: Vec<(usize, usize, String, usize)> = app
+            .layout
+            .iter()
+            .filter_map(|r| {
+                if r.is_phantom {
+                    None
+                } else {
+                    Some((r.line_idx, r.char_start, r.raw_text.clone(), r.char_end))
+                }
+            })
+            .collect();
+
+        for (line_idx, char_start, raw_text, char_end) in test_coordinates {
+            app.cursor_y = line_idx;
+            app.cursor_x = char_start;
+            app.report_cursor_position();
+
+            let status = app
+                .status_msg
+                .as_ref()
+                .expect("Status message should be set");
+
+            let line_part = status.split(',').next().unwrap();
+            let fraction_part = line_part.split(' ').nth(1).unwrap();
+
+            let cur_line_str = fraction_part.split('/').next().unwrap();
+            let reported_line: usize = cur_line_str.parse().unwrap();
+
+            let total_lines_str = fraction_part.split('/').nth(1).unwrap();
+            let reported_total: usize = total_lines_str.parse().unwrap();
+
+            assert_eq!(
+                reported_line,
+                line_idx + 1,
+                "Mismatch at logical line {} (text: '{}'). Expected logical line {}, but got {}",
+                line_idx,
+                raw_text,
+                line_idx + 1,
+                reported_line
+            );
+
+            assert_eq!(
+                reported_total,
+                app.lines.len(),
+                "Total logical lines mismatch at logical line {}",
+                line_idx
+            );
+
+            app.cursor_x = char_end;
+            app.report_cursor_position();
+            assert!(
+                app.status_msg.is_some(),
+                "report_cursor_position panicked or failed at the end of logical line {}",
+                line_idx
+            );
+        }
+
+        let coords: Vec<(usize, usize, usize)> = app
+            .layout
+            .iter()
+            .filter(|r| !r.is_phantom)
+            .flat_map(|row| {
+                (row.char_start..=row.char_end).map(move |cx| (row.line_idx, cx, row.char_start))
+            })
+            .collect();
+
+        let mut prev_char = 0usize;
+        let mut prev_line = 0usize;
+
+        for (line_idx, cx, _) in coords {
+            app.cursor_y = line_idx;
+            app.cursor_x = cx;
+            app.report_cursor_position();
+
+            let status = app.status_msg.as_ref().unwrap();
+            let parts: Vec<&str> = status.split(", ").collect();
+
+            let cur_line: usize = parts[0]
+                .split('/')
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse()
+                .unwrap();
+            let cur_char: usize = parts[2]
+                .split('/')
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .nth(1)
+                .unwrap()
+                .parse()
+                .unwrap();
+
+            assert!(
+                cur_line >= prev_line,
+                "line went backwards at y={} x={}: {} -> {}",
+                line_idx,
+                cx,
+                prev_line,
+                cur_line
+            );
+            assert!(
+                cur_char >= prev_char,
+                "char went backwards at y={} x={}: {} -> {}",
+                line_idx,
+                cx,
+                prev_char,
+                cur_char
+            );
+
+            prev_char = cur_char;
+            prev_line = cur_line;
+        }
+
+        app.cursor_y = app
+            .lines
+            .iter()
+            .position(|l| l.starts_with("INT. FLAT"))
+            .unwrap();
+        app.cursor_x = 0;
+        app.update_layout();
+        app.report_cursor_position();
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 8/93 (8%), col 1/31 (3%), char 126/4074 (3%)")
+        );
+
+        app.cursor_y = app
+            .lines
+            .iter()
+            .position(|l| l.starts_with(">AN ABRUPT"))
+            .unwrap();
+        app.cursor_x = 0;
+        app.update_layout();
+        app.report_cursor_position();
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 67/93 (72%), col 1/41 (2%), char 2969/4074 (72%)")
+        );
+
+        app.cursor_y = app.lines.iter().position(|l| l == "> FADE OUT").unwrap();
+        app.cursor_x = app.lines[app.cursor_y].chars().count();
+        app.update_layout();
+        app.report_cursor_position();
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("line 93/93 (100%), col 11/11 (100%), char 4074/4074 (100%)")
+        );
     }
 }
