@@ -88,6 +88,9 @@ pub struct App {
     pub cut_buffer: Option<String>,
     pub search_query: String,
     pub last_search: String,
+
+    pub show_search_highlight: bool,
+    pub compiled_search_regex: Option<regex::Regex>,
 }
 
 impl App {
@@ -143,6 +146,8 @@ impl App {
             cut_buffer: None,
             search_query: String::new(),
             last_search: String::new(),
+            show_search_highlight: false,
+            compiled_search_regex: None,
         };
 
         if is_new_or_empty && app.config.auto_title_page {
@@ -173,6 +178,23 @@ impl App {
 
     pub fn clear_status(&mut self) {
         self.status_msg = None;
+    }
+
+    pub fn update_search_regex(&mut self) {
+        let active_query = if self.search_query.is_empty() {
+            &self.last_search
+        } else {
+            &self.search_query
+        };
+
+        if active_query.is_empty() {
+            self.compiled_search_regex = None;
+        } else {
+            self.compiled_search_regex = regex::RegexBuilder::new(&regex::escape(active_query))
+                .case_insensitive(true)
+                .build()
+                .ok();
+        }
     }
 
     pub fn report_cursor_position(&mut self) {
@@ -260,53 +282,69 @@ impl App {
     }
 
     pub fn execute_search(&mut self) {
-        self.mode = AppMode::Normal;
-
         if self.search_query.is_empty() {
             self.search_query = self.last_search.clone();
         }
-
         if self.search_query.is_empty() {
+            self.mode = AppMode::Normal;
             self.set_status("Cancelled");
+            self.show_search_highlight = false;
+            self.compiled_search_regex = None;
             return;
         }
         self.last_search = self.search_query.clone();
+        self.update_search_regex();
 
+        let re = self.compiled_search_regex.as_ref().unwrap();
+
+        let mut wrapped = false;
         let mut found = false;
         let start_y = self.cursor_y;
         let start_char_x = self.cursor_x;
 
-        for i in 0..self.lines.len() {
+        for i in 0..=self.lines.len() {
             let y = (start_y + i) % self.lines.len();
             let line = &self.lines[y];
 
-            let search_str: String = if i == 0 {
-                let skip_chars = (start_char_x + 1).min(line.chars().count());
-                line.chars().skip(skip_chars).collect()
-            } else {
-                line.clone()
-            };
+            for mat in re.find_iter(line) {
+                let char_idx = line[..mat.start()].chars().count();
 
-            let lower_search_str = search_str.to_lowercase();
-            if let Some(byte_idx) = lower_search_str.find(&self.search_query.to_lowercase()) {
-                let char_offset = lower_search_str[..byte_idx].chars().count();
+                if i == 0 && char_idx <= start_char_x {
+                    continue;
+                }
+
+                if i == self.lines.len() && char_idx > start_char_x {
+                    continue;
+                }
 
                 self.cursor_y = y;
-                self.cursor_x = if i == 0 {
-                    (start_char_x + 1).min(line.chars().count()) + char_offset
-                } else {
-                    char_offset
-                };
+                self.cursor_x = char_idx;
                 found = true;
+
+                if y < start_y || (y == start_y && i > 0) {
+                    wrapped = true;
+                }
+                break;
+            }
+            if found {
                 break;
             }
         }
 
+        self.mode = AppMode::Normal;
+
         if !found {
             self.set_status(&format!("\"{}\" not found", self.search_query));
+            self.show_search_highlight = false;
         } else {
-            self.clear_status();
+            self.show_search_highlight = true;
+            if wrapped {
+                self.set_status("Search Wrapped");
+            } else {
+                self.clear_status();
+            }
         }
+
         self.search_query.clear();
     }
 
@@ -957,6 +995,10 @@ impl App {
     ) -> io::Result<bool> {
         if let Event::Mouse(mouse_event) = ev {
             self.clear_status();
+            if self.show_search_highlight {
+                self.show_search_highlight = false;
+            }
+
             match mouse_event.kind {
                 MouseEventKind::ScrollUp => {
                     self.move_up();
@@ -986,10 +1028,14 @@ impl App {
                         KeyCode::Esc => {
                             self.mode = AppMode::Normal;
                             self.set_status("Cancelled");
+                            self.show_search_highlight = false;
+                            self.search_query.clear();
                         }
                         KeyCode::Char('c') | KeyCode::Char('g') if ctrl => {
                             self.mode = AppMode::Normal;
                             self.set_status("Cancelled");
+                            self.show_search_highlight = false;
+                            self.search_query.clear();
                         }
                         KeyCode::Enter => {
                             self.execute_search();
@@ -998,9 +1044,11 @@ impl App {
                         }
                         KeyCode::Backspace => {
                             self.search_query.pop();
+                            self.update_search_regex();
                         }
                         KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => {
                             self.search_query.push(c);
+                            self.update_search_regex();
                         }
                         _ => {}
                     }
@@ -1075,6 +1123,17 @@ impl App {
                 AppMode::Normal => {
                     self.clear_status();
 
+                    if self.show_search_highlight {
+                        match key.code {
+                            KeyCode::Char('w') if ctrl => {}
+                            KeyCode::Char('c') if ctrl => {}
+                            _ => {
+                                self.show_search_highlight = false;
+                                *text_changed = true;
+                            }
+                        }
+                    }
+
                     match key.code {
                         KeyCode::Esc => {}
                         KeyCode::Char('x') if ctrl => {
@@ -1128,6 +1187,8 @@ impl App {
                         KeyCode::Char('w') if ctrl => {
                             self.mode = AppMode::Search;
                             self.search_query.clear();
+                            self.show_search_highlight = true;
+                            self.update_search_regex();
                         }
                         KeyCode::Char('c') if ctrl => {
                             self.report_cursor_position();
@@ -1358,6 +1419,23 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 meta_key_end = full_logical_line[..=idx].chars().count() + 1;
             }
 
+            let mut row_highlights = HashSet::new();
+            if app.show_search_highlight
+                && let Some(re) = &app.compiled_search_regex
+            {
+                for mat in re.find_iter(full_logical_line) {
+                    let start_byte = mat.start();
+                    let end_byte = mat.end();
+
+                    let char_start = full_logical_line[..start_byte].chars().count();
+                    let char_len = full_logical_line[start_byte..end_byte].chars().count();
+
+                    for idx in char_start..(char_start + char_len) {
+                        row_highlights.insert(idx);
+                    }
+                }
+            }
+
             spans.extend(render_inline(
                 &display,
                 bst,
@@ -1371,6 +1449,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     no_color: app.config.no_color,
                     no_formatting: app.config.no_formatting,
                 },
+                &row_highlights,
             ));
 
             if row.is_active
@@ -2668,6 +2747,114 @@ And Beat itself, of course: https://www.beat-app.fi/
         assert!(
             content.contains("INT. TEST SCENE"),
             "Standard text should be rendered"
+        );
+    }
+
+    #[test]
+    fn test_search_regex_basic_and_highlight_flag() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Hello world".to_string(), "Line two".to_string()];
+        app.search_query = "world".to_string();
+        app.cursor_y = 0;
+        app.cursor_x = 0;
+
+        app.execute_search();
+
+        assert_eq!(app.cursor_y, 0);
+        assert_eq!(app.cursor_x, 6);
+        assert!(
+            app.show_search_highlight,
+            "Highlight flag should be active after finding"
+        );
+    }
+
+    #[test]
+    fn test_search_regex_wrap_around() {
+        let mut app = create_empty_app();
+        app.lines = vec!["First target".to_string(), "Second line".to_string()];
+        app.search_query = "target".to_string();
+        app.cursor_y = 1;
+        app.cursor_x = 0;
+
+        app.execute_search();
+
+        assert_eq!(app.cursor_y, 0, "Should wrap around to line 0");
+        assert_eq!(app.cursor_x, 6, "Index of 't' in 'target'");
+        assert_eq!(
+            app.status_msg.as_deref(),
+            Some("Search Wrapped"),
+            "Should display wrapped status message"
+        );
+    }
+
+    #[test]
+    fn test_search_regex_not_found() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Just text".to_string()];
+        app.search_query = "unicorn".to_string();
+
+        app.execute_search();
+
+        assert_eq!(app.cursor_y, 0, "Cursor should not move");
+        assert_eq!(app.status_msg.as_deref(), Some("\"unicorn\" not found"));
+        assert!(
+            !app.show_search_highlight,
+            "Highlight should be disabled if not found"
+        );
+    }
+
+    #[test]
+    fn test_search_regex_utf8_multibyte_safety() {
+        let mut app = create_empty_app();
+
+        app.lines = vec!["путин 🦀 краб".to_string()];
+        app.search_query = "краб".to_string();
+        app.cursor_y = 0;
+        app.cursor_x = 0;
+
+        app.execute_search();
+
+        assert_eq!(
+            app.cursor_x, 8,
+            "Search must correctly convert byte offsets to char offsets"
+        );
+    }
+
+    #[test]
+    fn test_search_highlight_cleared_on_escape() {
+        use crossterm::event::{
+            Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
+        };
+
+        let mut app = create_empty_app();
+        app.lines = vec!["Target word".to_string()];
+        app.search_query = "word".to_string();
+        app.execute_search();
+
+        assert!(app.show_search_highlight);
+
+        let esc_event = Event::Key(KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+
+        let mut update_x = false;
+        let mut text_ch = false;
+        let mut cur_moved = false;
+
+        let _ = app
+            .handle_event(esc_event, &mut update_x, &mut text_ch, &mut cur_moved)
+            .unwrap();
+
+        assert!(
+            !app.show_search_highlight,
+            "Highlight flag should be reset when pressing Escape"
+        );
+        assert!(
+            text_ch,
+            "Text changed flag should trigger redraw to clear highlights"
         );
     }
 }

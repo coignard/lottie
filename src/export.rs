@@ -77,6 +77,7 @@ pub fn export_document(
     let gap_size = 6usize;
 
     let mut skipped_comment = false;
+    let empty_highlights = std::collections::HashSet::new();
 
     for row in layout {
         if matches!(
@@ -185,6 +186,7 @@ pub fn export_document(
                 no_color: config.no_color || !with_ansi,
                 no_formatting: config.no_formatting || !with_ansi,
             },
+            &empty_highlights,
         );
 
         for span in spans {

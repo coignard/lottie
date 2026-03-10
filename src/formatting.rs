@@ -162,6 +162,7 @@ pub fn render_inline(
     base: Style,
     fmt: &LineFormatting,
     cfg: RenderConfig,
+    highlights: &HashSet<usize>,
 ) -> Vec<Span<'static>> {
     if cfg.skip_markdown && !cfg.exclude_comments {
         return vec![Span::styled(text.to_string(), base)];
@@ -213,6 +214,19 @@ pub fn render_inline(
                 );
             } else if is_key {
                 s.fg = Some(Color::DarkGray);
+            }
+        }
+
+        if highlights.contains(&global_i) {
+            if cfg.no_color {
+                s.fg = None;
+                s.bg = None;
+                s.add_modifier = s.add_modifier.union(Modifier::REVERSED);
+            } else {
+                s.bg = Some(Color::Yellow);
+                s.fg = Some(Color::Black);
+
+                s.sub_modifier = s.sub_modifier.union(Modifier::BOLD).union(Modifier::DIM);
             }
         }
 
@@ -330,7 +344,8 @@ mod formatting_tests {
             skip_markdown: true,
             ..Default::default()
         };
-        let spans = render_inline("**bold**", Style::default(), &fmt, cfg);
+        let hl = HashSet::new();
+        let spans = render_inline("**bold**", Style::default(), &fmt, cfg, &hl);
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content, "**bold**");
     }
@@ -342,7 +357,8 @@ mod formatting_tests {
             reveal_markup: true,
             ..Default::default()
         };
-        let spans = render_inline("**bold**", Style::default(), &fmt, cfg);
+        let hl = HashSet::new();
+        let spans = render_inline("**bold**", Style::default(), &fmt, cfg, &hl);
         let complete_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(complete_text, "**bold**");
     }
@@ -350,7 +366,14 @@ mod formatting_tests {
     #[test]
     fn test_render_inline_hide_markup() {
         let fmt = parse_formatting("**bold**");
-        let spans = render_inline("**bold**", Style::default(), &fmt, RenderConfig::default());
+        let hl = HashSet::new();
+        let spans = render_inline(
+            "**bold**",
+            Style::default(),
+            &fmt,
+            RenderConfig::default(),
+            &hl,
+        );
         let complete_text: String = spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(complete_text, "bold");
     }
@@ -362,7 +385,8 @@ mod formatting_tests {
             meta_key_end: 7,
             ..Default::default()
         };
-        let spans = render_inline("Title: Text", Style::default(), &fmt, cfg);
+        let hl = HashSet::new();
+        let spans = render_inline("Title: Text", Style::default(), &fmt, cfg, &hl);
         assert_eq!(spans[0].content, "Title: ");
         assert_eq!(spans[0].style.fg, Some(ratatui::style::Color::DarkGray));
         assert_eq!(spans[1].content, "Text");
@@ -378,12 +402,14 @@ mod formatting_tests {
             no_formatting: false,
             ..Default::default()
         };
+        let hl = HashSet::new();
 
         let spans = render_inline(
             "**bold text** with [[yellow note]]",
             Style::default(),
             &fmt,
             cfg,
+            &hl,
         );
 
         let bold_span = spans.iter().find(|s| s.content.contains("bold")).unwrap();
@@ -419,12 +445,14 @@ mod formatting_tests {
             no_formatting: true,
             ..Default::default()
         };
+        let hl = HashSet::new();
 
         let spans = render_inline(
             "**bold text** with [[yellow note]]",
             Style::default(),
             &fmt,
             cfg,
+            &hl,
         );
 
         let bold_span = spans.iter().find(|s| s.content.contains("bold")).unwrap();
@@ -456,12 +484,14 @@ mod formatting_tests {
             no_formatting: true,
             ..Default::default()
         };
+        let hl = HashSet::new();
 
         let spans = render_inline(
             "**bold text** with [[yellow note]]",
             Style::default(),
             &fmt,
             cfg,
+            &hl,
         );
 
         for span in spans {
@@ -471,5 +501,52 @@ mod formatting_tests {
                 "Everything should be stripped down to default style"
             );
         }
+    }
+
+    #[test]
+    fn test_render_inline_search_highlight_color() {
+        let fmt = LineFormatting::default();
+        let cfg = RenderConfig::default();
+
+        let mut hl = HashSet::new();
+        hl.extend(0..4);
+
+        let base_style = Style::default()
+            .add_modifier(Modifier::BOLD)
+            .fg(Color::White);
+
+        let spans = render_inline("test string", base_style, &fmt, cfg, &hl);
+
+        let highlight_span = &spans[0];
+        assert_eq!(highlight_span.content, "test");
+        assert_eq!(highlight_span.style.bg, Some(Color::Yellow));
+        assert_eq!(highlight_span.style.fg, Some(Color::Black));
+
+        assert!(highlight_span.style.sub_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_render_inline_search_highlight_no_color() {
+        let fmt = LineFormatting::default();
+        let cfg = RenderConfig {
+            no_color: true,
+            ..Default::default()
+        };
+
+        let mut hl = HashSet::new();
+        hl.extend(0..4);
+
+        let spans = render_inline("test string", Style::default(), &fmt, cfg, &hl);
+
+        let highlight_span = &spans[0];
+        assert_eq!(highlight_span.style.bg, None);
+        assert_eq!(highlight_span.style.fg, None);
+
+        assert!(
+            highlight_span
+                .style
+                .add_modifier
+                .contains(Modifier::REVERSED)
+        );
     }
 }
