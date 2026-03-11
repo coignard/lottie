@@ -179,6 +179,7 @@ A sample config is also included here in the repository.
 --force-ansi                 Force ANSI color output even if unsupported by the terminal
 --export [FILE]              Export rendered script to file or stdout
 --format <FORMAT>            Export format: plain, ascii, ansi (default: plain)
+```
 
 ## Test
 
