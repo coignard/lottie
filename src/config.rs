@@ -81,6 +81,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_break_actions: bool,
 
+    /// Open the file with the cursor at the end
+    #[arg(long)]
+    pub goto_end: bool,
+
     /// Set (CONT'D) extension text
     #[arg(long)]
     pub contd_extension: Option<String>,
@@ -139,6 +143,7 @@ pub struct Config {
     pub focus_mode: bool,
     pub highlight_active_action: bool,
     pub break_actions: bool,
+    pub goto_end: bool,
 
     pub no_color: bool,
     pub no_formatting: bool,
@@ -169,6 +174,7 @@ impl Default for Config {
             focus_mode: false,
             highlight_active_action: false,
             break_actions: true,
+            goto_end: false,
 
             contd_extension: "(CONT'D)".to_string(),
             heading_style: "bold".to_string(),
@@ -216,6 +222,7 @@ impl Config {
                         "focus_mode" => self.focus_mode = true,
                         "highlight_active_action" => self.highlight_active_action = true,
                         "break_actions" => self.break_actions = true,
+                        "goto_end" => self.goto_end = true,
                         "contd_extension" => self.contd_extension = val,
                         "heading_style" => self.heading_style = val,
                         "heading_spacing" => {
@@ -246,6 +253,7 @@ impl Config {
                         "focus_mode" => self.focus_mode = false,
                         "highlight_active_action" => self.highlight_active_action = false,
                         "break_actions" => self.break_actions = false,
+                        "goto_end" => self.goto_end = false,
                         "no_color" => self.no_color = false,
                         "no_formatting" => self.no_formatting = false,
                         "force_ascii" => self.force_ascii = false,
@@ -291,6 +299,7 @@ impl Config {
         config.no_formatting |= cli.no_formatting;
         config.force_ascii |= cli.force_ascii;
         config.force_ansi |= cli.force_ansi;
+        config.goto_end |= cli.goto_end;
 
         if let Some(ref ext) = cli.contd_extension {
             config.contd_extension = ext.clone();

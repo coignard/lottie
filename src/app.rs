@@ -156,7 +156,7 @@ impl App {
             app.lines = vec![
                 "Title: Untitled".to_string(),
                 "Credit: Written by".to_string(),
-                "Author: Author Name".to_string(),
+                "Author: ".to_string(),
                 "Draft date: ".to_string(),
                 "Contact: ".to_string(),
                 "".to_string(),
@@ -165,6 +165,9 @@ impl App {
             app.cursor_y = app.lines.len() - 1;
             app.cursor_x = 0;
             app.dirty = true;
+        } else if app.config.goto_end {
+            app.cursor_y = app.lines.len().saturating_sub(1);
+            app.cursor_x = app.line_len(app.cursor_y);
         }
 
         app.parse_document();
@@ -2942,7 +2945,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.6
+Draft date: Version 0.2.7
 Contact:
 contact@renecoignard.com
 
