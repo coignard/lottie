@@ -169,6 +169,7 @@ A sample config is also included here in the repository.
 --focus-mode                 Enable focus mode
 --highlight-active-action    Highlight active action line in white
 --no-break-actions           Disable breaking actions across pages
+--goto-end                   Open the file with the cursor at the end
 --contd-extension <text>     Set the (CONT'D) extension text
 --heading-style <style>      Set heading style, e.g. "bold underline"
 --heading-spacing <n>        Set spacing before scene headings
