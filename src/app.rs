@@ -3335,6 +3335,8 @@ And Beat itself, of course: https://www.beat-app.fi/
         let mut app = create_empty_app();
 
         app.config.highlight_active_action = true;
+        app.config.no_color = false;
+
         app.lines = vec!["An action line".to_string(), "".to_string(), "".to_string()];
         app.types = vec![LineType::Action, LineType::Empty, LineType::Empty];
         app.cursor_y = 2;
