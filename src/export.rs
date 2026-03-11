@@ -261,7 +261,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.4
+Draft date: Version 0.2.5
 Contact:
 contact@renecoignard.com
 

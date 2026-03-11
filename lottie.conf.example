@@ -12,12 +12,21 @@ set show_scene_numbers
 # Show page numbers on the right side of the screen.
 set show_page_numbers
 
-# Automatically hide Fountain markup when the cursor
-# is not on the current line.
+# Automatically hide Fountain markup when the cursor is not
+# on the current line.
 set hide_markup
+
+# Highlight active action line (or nearest action line above)
+# in bright white color.
+unset highlight_active_action
 
 # Typewriter mode
 unset typewriter_mode
+
+# Strict typewriter mode (forces the active line to stay in the exact
+# vertical center of the terminal at all times, even at the beginning
+# of the document).
+unset strict_typewriter_mode
 
 # Focus mode
 unset focus_mode
@@ -53,23 +62,23 @@ set contd_extension "(CONT'D)"
 # Use "unset break_actions" to keep action blocks on a single page.
 set break_actions
 
-# Styling applied to scene headings.
-# Available values: "bold", "underline", "bold underline"
+# Styling applied to scene headings. Available values: "bold",
+# "underline", "bold underline"
 set heading_style "bold"
 
-# Number of blank lines before a scene heading.
-# Set to 2 for double spacing before each new scene.
+# Number of blank lines before a scene heading. Set to 2 for double
+# spacing before each new scene.
 set heading_spacing 1
 
-# Styling applied to shots (e.g. !! CLOSE UP).
-# Available values: "bold", "underline", "bold underline"
+# Styling applied to shots (e.g. !! CLOSE UP). Available values: "bold",
+# "underline", "bold underline"
 set shot_style "bold"
 
 ## Display & Terminal
 
-# Disable all terminal colors. Lottie will still render bold,
-# italic, and underline modifiers if supported by your terminal.
-# Lottie tries to detect color support automatically.
+# Disable all terminal colors. Lottie will still render bold, italic,
+# and underline modifiers if supported by your terminal. Lottie tries
+# to detect color support automatically.
 unset no_color
 
 # Disable all text formatting (bold, italic, underline).
@@ -79,7 +88,7 @@ unset no_formatting
 # that your terminal does not support them.
 unset force_ansi
 
-# Force the use of ASCII characters instead of Unicode
-# (e.g., for page break lines). Useful for older terminals.
-# Lottie will try to detect Unicode support automatically.
+# Force the use of ASCII characters instead of Unicode (e.g., for page
+# break lines). Useful for older terminals. Lottie will try to detect
+# Unicode support automatically.
 unset force_ascii

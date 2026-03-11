@@ -65,9 +65,17 @@ pub struct Cli {
     #[arg(long)]
     pub typewriter_mode: bool,
 
+    /// Enable strict typewriter mode (always center)
+    #[arg(long)]
+    pub strict_typewriter_mode: bool,
+
     /// Enable focus mode
     #[arg(long)]
     pub focus_mode: bool,
+
+    /// Highlight active action line in white
+    #[arg(long)]
+    pub highlight_active_action: bool,
 
     /// Disable breaking actions across pages
     #[arg(long)]
@@ -127,7 +135,9 @@ pub struct Config {
     pub close_elements: bool,
     pub auto_title_page: bool,
     pub typewriter_mode: bool,
+    pub strict_typewriter_mode: bool,
     pub focus_mode: bool,
+    pub highlight_active_action: bool,
     pub break_actions: bool,
 
     pub no_color: bool,
@@ -155,7 +165,9 @@ impl Default for Config {
             close_elements: true,
             auto_title_page: false,
             typewriter_mode: false,
+            strict_typewriter_mode: false,
             focus_mode: false,
+            highlight_active_action: false,
             break_actions: true,
 
             contd_extension: "(CONT'D)".to_string(),
@@ -200,7 +212,9 @@ impl Config {
                         "close_elements" => self.close_elements = true,
                         "auto_title_page" => self.auto_title_page = true,
                         "typewriter_mode" => self.typewriter_mode = true,
+                        "strict_typewriter_mode" => self.strict_typewriter_mode = true,
                         "focus_mode" => self.focus_mode = true,
+                        "highlight_active_action" => self.highlight_active_action = true,
                         "break_actions" => self.break_actions = true,
                         "contd_extension" => self.contd_extension = val,
                         "heading_style" => self.heading_style = val,
@@ -228,7 +242,9 @@ impl Config {
                         "close_elements" => self.close_elements = false,
                         "auto_title_page" => self.auto_title_page = false,
                         "typewriter_mode" => self.typewriter_mode = false,
+                        "strict_typewriter_mode" => self.strict_typewriter_mode = false,
                         "focus_mode" => self.focus_mode = false,
+                        "highlight_active_action" => self.highlight_active_action = false,
                         "break_actions" => self.break_actions = false,
                         "no_color" => self.no_color = false,
                         "no_formatting" => self.no_formatting = false,
@@ -268,7 +284,9 @@ impl Config {
 
         config.auto_title_page |= cli.auto_title_page;
         config.typewriter_mode |= cli.typewriter_mode;
+        config.strict_typewriter_mode |= cli.strict_typewriter_mode;
         config.focus_mode |= cli.focus_mode;
+        config.highlight_active_action |= cli.highlight_active_action;
         config.no_color |= cli.no_color;
         config.no_formatting |= cli.no_formatting;
         config.force_ascii |= cli.force_ascii;

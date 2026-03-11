@@ -165,7 +165,9 @@ A sample config is also included here in the repository.
 --no-close-elements          Disable auto-closing elements
 --auto-title-page            Generate title page if file is new
 --typewriter-mode            Enable typewriter mode
+--strict-typewriter-mode     Enable strict typewriter mode (always center)
 --focus-mode                 Enable focus mode
+--highlight-active-action    Highlight active action line in white
 --no-break-actions           Disable breaking actions across pages
 --contd-extension <text>     Set the (CONT'D) extension text
 --heading-style <style>      Set heading style, e.g. "bold underline"
@@ -177,7 +179,6 @@ A sample config is also included here in the repository.
 --force-ansi                 Force ANSI color output even if unsupported by the terminal
 --export [FILE]              Export rendered script to file or stdout
 --format <FORMAT>            Export format: plain, ascii, ansi (default: plain)
-```
 
 ## Test
 

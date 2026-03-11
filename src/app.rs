@@ -1360,7 +1360,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let (vis_row, vis_x) = find_visual_cursor(&app.layout, app.cursor_y, app.cursor_x);
 
-    if app.config.typewriter_mode {
+    let mut pad_top = 0;
+
+    if app.config.strict_typewriter_mode {
+        let absolute_center = area.height / 2;
+        let center_offset = absolute_center.saturating_sub(text_area.y) as usize;
+        if vis_row < center_offset {
+            pad_top = center_offset - vis_row;
+        }
+        app.scroll = vis_row.saturating_sub(center_offset);
+    } else if app.config.typewriter_mode {
         let absolute_center = area.height / 2;
         let center_offset = absolute_center.saturating_sub(text_area.y) as usize;
         app.scroll = vis_row.saturating_sub(center_offset);
@@ -1396,137 +1405,168 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let panel_style = Style::default().add_modifier(Modifier::REVERSED);
 
-    let visible: Vec<Line> = app
-        .layout
-        .iter()
-        .skip(app.scroll)
-        .take(height)
-        .map(|row| {
-            let mut spans = Vec::new();
-            let gap_size = 6u16;
+    let mut visible: Vec<Line> = Vec::new();
+    for _ in 0..pad_top {
+        visible.push(Line::raw(""));
+    }
 
-            if let Some(snum) = row.scene_num {
-                let s_str = format!("{}", snum);
-                let s_len = s_str.len() as u16;
-
-                if global_pad >= s_len + gap_size {
-                    let pad = global_pad - s_len - gap_size;
-                    spans.push(Span::raw(" ".repeat(pad as usize)));
-                    spans.push(Span::styled(s_str, dark_gray_style));
-                    spans.push(Span::raw(" ".repeat(gap_size as usize)));
-                } else {
-                    spans.push(Span::styled(s_str, dark_gray_style));
-                    spans.push(Span::raw(" "));
+    let mut active_action_idx = None;
+    if app.config.highlight_active_action {
+        let mut check_y = app.cursor_y;
+        while check_y < app.types.len() {
+            match app.types[check_y] {
+                LineType::Action => {
+                    active_action_idx = Some(check_y);
+                    break;
                 }
-            } else {
-                spans.push(Span::raw(" ".repeat(global_pad as usize)));
+                LineType::Empty => {
+                    if check_y == 0 {
+                        break;
+                    }
+                    check_y -= 1;
+                }
+                _ => break,
             }
+        }
+    }
 
-            spans.push(Span::raw(" ".repeat(row.indent as usize)));
+    visible.extend(
+        app.layout
+            .iter()
+            .skip(app.scroll)
+            .take(height.saturating_sub(pad_top))
+            .map(|row| {
+                let mut spans = Vec::new();
+                let gap_size = 6u16;
 
-            let mut bst = base_style(row.line_type, &app.config);
-            if let Some(c) = row.override_color
-                && !app.config.no_color
-            {
-                bst.fg = Some(c);
-            }
+                if let Some(snum) = row.scene_num {
+                    let s_str = format!("{}", snum);
+                    let s_len = s_str.len() as u16;
 
-            let mut display = if row.is_active {
-                row.raw_text.clone()
-            } else {
-                strip_sigils(&row.raw_text, row.line_type).to_string()
-            };
-
-            let reveal_markup = !app.config.hide_markup
-                || row.is_active
-                || row.raw_text.contains("/*")
-                || row.raw_text.contains("*/");
-            let skip_md = row.line_type == LineType::Boneyard;
-
-            if row.line_type == LineType::SceneHeading || row.line_type == LineType::Transition {
-                display = display.to_uppercase();
-            } else if row.line_type == LineType::Character
-                || row.line_type == LineType::DualDialogueCharacter
-            {
-                if let Some(idx) = display.find('(') {
-                    let name = display[..idx].to_uppercase();
-                    let ext = &display[idx..];
-                    display = format!("{}{}", name, ext);
+                    if global_pad >= s_len + gap_size {
+                        let pad = global_pad - s_len - gap_size;
+                        spans.push(Span::raw(" ".repeat(pad as usize)));
+                        spans.push(Span::styled(s_str, dark_gray_style));
+                        spans.push(Span::raw(" ".repeat(gap_size as usize)));
+                    } else {
+                        spans.push(Span::styled(s_str, dark_gray_style));
+                        spans.push(Span::raw(" "));
+                    }
                 } else {
+                    spans.push(Span::raw(" ".repeat(global_pad as usize)));
+                }
+
+                spans.push(Span::raw(" ".repeat(row.indent as usize)));
+
+                let mut bst = base_style(row.line_type, &app.config);
+                if app.config.highlight_active_action
+                    && Some(row.line_idx) == active_action_idx
+                    && !app.config.no_color
+                {
+                    bst.fg = Some(Color::White);
+                } else if let Some(c) = row.override_color
+                    && !app.config.no_color
+                {
+                    bst.fg = Some(c);
+                }
+
+                let mut display = if row.is_active {
+                    row.raw_text.clone()
+                } else {
+                    strip_sigils(&row.raw_text, row.line_type).to_string()
+                };
+
+                let reveal_markup = !app.config.hide_markup
+                    || row.is_active
+                    || row.raw_text.contains("/*")
+                    || row.raw_text.contains("*/");
+                let skip_md = row.line_type == LineType::Boneyard;
+
+                if row.line_type == LineType::SceneHeading || row.line_type == LineType::Transition
+                {
                     display = display.to_uppercase();
-                }
-            }
-
-            let empty_logical_line = String::new();
-            let full_logical_line = app.lines.get(row.line_idx).unwrap_or(&empty_logical_line);
-
-            let is_last_visual_row = row.char_end == full_logical_line.chars().count();
-            let mut meta_key_end = 0;
-
-            if (row.line_type == LineType::MetadataKey
-                || (row.line_type == LineType::MetadataTitle && row.is_active))
-                && let Some(idx) = full_logical_line.find(':')
-            {
-                meta_key_end = full_logical_line[..=idx].chars().count() + 1;
-            }
-
-            let mut row_highlights = HashSet::new();
-            if app.show_search_highlight
-                && let Some(re) = &app.compiled_search_regex
-            {
-                for mat in re.find_iter(full_logical_line) {
-                    let start_byte = mat.start();
-                    let end_byte = mat.end();
-
-                    let char_start = full_logical_line[..start_byte].chars().count();
-                    let char_len = full_logical_line[start_byte..end_byte].chars().count();
-
-                    for idx in char_start..(char_start + char_len) {
-                        row_highlights.insert(idx);
+                } else if row.line_type == LineType::Character
+                    || row.line_type == LineType::DualDialogueCharacter
+                {
+                    if let Some(idx) = display.find('(') {
+                        let name = display[..idx].to_uppercase();
+                        let ext = &display[idx..];
+                        display = format!("{}{}", name, ext);
+                    } else {
+                        display = display.to_uppercase();
                     }
                 }
-            }
 
-            spans.extend(render_inline(
-                &display,
-                bst,
-                &row.fmt,
-                RenderConfig {
-                    reveal_markup,
-                    skip_markdown: skip_md,
-                    exclude_comments: false,
-                    char_offset: row.char_start,
-                    meta_key_end,
-                    no_color: app.config.no_color,
-                    no_formatting: app.config.no_formatting,
-                },
-                &row_highlights,
-            ));
+                let empty_logical_line = String::new();
+                let full_logical_line = app.lines.get(row.line_idx).unwrap_or(&empty_logical_line);
 
-            if row.is_active
-                && row.line_idx == app.cursor_y
-                && is_last_visual_row
-                && let Some(sug) = &app.suggestion
-            {
-                spans.push(Span::styled(sug.clone(), sug_style));
-            }
+                let is_last_visual_row = row.char_end == full_logical_line.chars().count();
+                let mut meta_key_end = 0;
 
-            if let Some(pnum) = row.page_num {
-                let current_line_width: usize = spans
-                    .iter()
-                    .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
-                    .sum();
-
-                let target_pos = global_pad as usize + page_w as usize + gap_size as usize;
-                if target_pos > current_line_width {
-                    spans.push(Span::raw(" ".repeat(target_pos - current_line_width)));
-                    spans.push(Span::styled(format!("{}.", pnum), page_num_style));
+                if (row.line_type == LineType::MetadataKey
+                    || (row.line_type == LineType::MetadataTitle && row.is_active))
+                    && let Some(idx) = full_logical_line.find(':')
+                {
+                    meta_key_end = full_logical_line[..=idx].chars().count() + 1;
                 }
-            }
 
-            Line::from(spans)
-        })
-        .collect();
+                let mut row_highlights = HashSet::new();
+                if app.show_search_highlight
+                    && let Some(re) = &app.compiled_search_regex
+                {
+                    for mat in re.find_iter(full_logical_line) {
+                        let start_byte = mat.start();
+                        let end_byte = mat.end();
+
+                        let char_start = full_logical_line[..start_byte].chars().count();
+                        let char_len = full_logical_line[start_byte..end_byte].chars().count();
+
+                        for idx in char_start..(char_start + char_len) {
+                            row_highlights.insert(idx);
+                        }
+                    }
+                }
+
+                spans.extend(render_inline(
+                    &display,
+                    bst,
+                    &row.fmt,
+                    RenderConfig {
+                        reveal_markup,
+                        skip_markdown: skip_md,
+                        exclude_comments: false,
+                        char_offset: row.char_start,
+                        meta_key_end,
+                        no_color: app.config.no_color,
+                        no_formatting: app.config.no_formatting,
+                    },
+                    &row_highlights,
+                ));
+
+                if row.is_active
+                    && row.line_idx == app.cursor_y
+                    && is_last_visual_row
+                    && let Some(sug) = &app.suggestion
+                {
+                    spans.push(Span::styled(sug.clone(), sug_style));
+                }
+
+                if let Some(pnum) = row.page_num {
+                    let current_line_width: usize = spans
+                        .iter()
+                        .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
+                        .sum();
+
+                    let target_pos = global_pad as usize + page_w as usize + gap_size as usize;
+                    if target_pos > current_line_width {
+                        spans.push(Span::raw(" ".repeat(target_pos - current_line_width)));
+                        spans.push(Span::styled(format!("{}.", pnum), page_num_style));
+                    }
+                }
+
+                Line::from(spans)
+            }),
+    );
 
     f.render_widget(Paragraph::new(visible), text_area);
 
@@ -1681,7 +1721,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             f.set_cursor_position((cur_screen_x, status_area.y));
         }
         AppMode::Normal => {
-            let cur_screen_y = text_area.y + (vis_row.saturating_sub(app.scroll)) as u16;
+            let cur_screen_y =
+                text_area.y + pad_top as u16 + (vis_row.saturating_sub(app.scroll)) as u16;
             let cur_screen_x = text_area.x + global_pad + vis_x;
             if cur_screen_y < text_area.y + text_area.height {
                 f.set_cursor_position((cur_screen_x, cur_screen_y));
@@ -2899,7 +2940,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.4
+Draft date: Version 0.2.5
 Contact:
 contact@renecoignard.com
 
@@ -3242,5 +3283,84 @@ And Beat itself, of course: https://www.beat-app.fi/
             app.status_msg.as_deref(),
             Some("line 93/93 (100%), col 11/11 (100%), char 4074/4074 (100%)")
         );
+    }
+
+    #[test]
+    fn test_draw_typewriter_mode_normal() {
+        use ratatui::{
+            Terminal,
+            backend::{Backend, TestBackend},
+        };
+        let mut app = create_empty_app();
+        app.config.typewriter_mode = true;
+        app.lines = vec!["Line 1".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        assert_eq!(app.scroll, 0);
+        assert_eq!(terminal.backend_mut().get_cursor_position().unwrap().y, 1);
+    }
+
+    #[test]
+    fn test_draw_typewriter_mode_strict() {
+        use ratatui::{
+            Terminal,
+            backend::{Backend, TestBackend},
+        };
+        let mut app = create_empty_app();
+        app.config.strict_typewriter_mode = true;
+        app.lines = vec!["Line 1".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        assert_eq!(terminal.backend_mut().get_cursor_position().unwrap().y, 12);
+    }
+
+    #[test]
+    fn test_draw_active_action_highlight() {
+        use ratatui::style::Color;
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+
+        app.config.highlight_active_action = true;
+        app.lines = vec!["An action line".to_string(), "".to_string(), "".to_string()];
+        app.types = vec![LineType::Action, LineType::Empty, LineType::Empty];
+        app.cursor_y = 2;
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut found_action_text = false;
+
+        for y in 0..24 {
+            for x in 0..80 {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == "A" {
+                    found_action_text = true;
+                    assert_eq!(
+                        cell.fg,
+                        Color::White,
+                        "Active action line above empty lines should be forced to white"
+                    );
+                }
+            }
+        }
+        assert!(found_action_text, "Action text should be rendered");
     }
 }
