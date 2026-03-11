@@ -11,7 +11,7 @@
 [![License: GPL-3.0-or-later](http://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
 
-A simple yet powerful screenwriting editor for the [Fountain](https://www.fountain.io/) plain-text screenplay format. Fast, lightweight, and built for writers who live in the terminal. Lottie is a Rust port of [Beat](https://www.beat-app.fi/), built with [ratatui](https://github.com/ratatui/ratatui).
+A simple yet powerful [Fountain](https://fountain.io/) screenplay editor. Fast, lightweight, and built for writers who live in the terminal. Lottie is a Rust port of [Beat](https://www.beat-app.fi/), built with [ratatui](https://github.com/ratatui/ratatui).
 
 [![asciicast](https://asciinema.org/a/1jYgFFAeaettGJZa.svg)](https://asciinema.org/a/1jYgFFAeaettGJZa)
 
