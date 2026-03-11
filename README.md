@@ -118,6 +118,9 @@ set contd_extension "(CONT'D)"
 # Use "unset break_actions" to keep action blocks on a single page.
 set break_actions
 
+# Open the file with the cursor at the end
+unset goto_end
+
 # Styling applied to scene headings.
 # Available values: "bold", "underline", "bold underline"
 set heading_style "bold"
