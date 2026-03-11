@@ -744,6 +744,8 @@ impl App {
                 | LineType::Shot
                 | LineType::Boneyard
                 | LineType::Dialogue
+                | LineType::Centered
+                | LineType::PageBreak
         );
 
         if self.config.auto_paragraph_breaks && breaks_paragraph && !head_is_empty {
@@ -2940,7 +2942,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.5
+Draft date: Version 0.2.6
 Contact:
 contact@renecoignard.com
 
