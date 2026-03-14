@@ -43,8 +43,9 @@ pub struct HistoryState {
     pub cursor_x: usize,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Default)]
 pub enum LastEdit {
+    #[default]
     None,
     Insert,
     Delete,
@@ -60,8 +61,32 @@ pub enum AppMode {
     PromptFilename,
 }
 
+#[derive(Clone, Default)]
+pub struct BufferState {
+    pub lines: Vec<String>,
+    pub types: Vec<LineType>,
+    pub layout: Vec<VisualRow>,
+    pub file: Option<PathBuf>,
+    pub dirty: bool,
+    pub cursor_y: usize,
+    pub cursor_x: usize,
+    pub target_visual_x: u16,
+    pub scroll: usize,
+    pub characters: HashSet<String>,
+    pub locations: HashSet<String>,
+    pub undo_stack: Vec<HistoryState>,
+    pub redo_stack: Vec<HistoryState>,
+    pub last_edit: LastEdit,
+}
+
 pub struct App {
     pub config: Config,
+
+    pub buffers: Vec<BufferState>,
+    pub current_buf_idx: usize,
+    pub has_multiple_buffers: bool,
+    pub escape_pressed: bool,
+
     pub lines: Vec<String>,
     pub types: Vec<LineType>,
     pub layout: Vec<VisualRow>,
@@ -94,39 +119,96 @@ pub struct App {
     pub compiled_search_regex: Option<regex::Regex>,
 }
 
-impl App {
-    pub fn new(path: Option<PathBuf>, cli: Cli) -> Self {
-        let mut is_new_or_empty = false;
+impl Drop for App {
+    fn drop(&mut self) {
+        #[cfg(not(test))]
+        if std::thread::panicking() {
+            self.emergency_save();
+        }
+    }
+}
 
-        let lines = match &path {
-            Some(p) if p.exists() => {
-                let text = fs::read_to_string(p)
-                    .unwrap_or_default()
-                    .replace('\t', "    ");
-                if text.trim().is_empty() {
-                    is_new_or_empty = true;
-                    vec![String::new()]
-                } else {
-                    let ls: Vec<String> = text.lines().map(str::to_string).collect();
-                    if ls.is_empty() {
-                        vec![String::new()]
-                    } else {
-                        ls
-                    }
+impl App {
+    pub fn new(cli: Cli) -> Self {
+        let config = Config::load(&cli);
+
+        let mut files = Vec::new();
+        if cli.files.is_empty() {
+            files.push(None);
+        } else {
+            let mut seen = std::collections::HashSet::new();
+            for path in cli.files.clone() {
+                let normalized = path.canonicalize().unwrap_or_else(|_| path.clone());
+                if seen.insert(normalized) {
+                    files.push(Some(path));
                 }
             }
-            _ => {
-                is_new_or_empty = true;
-                vec![String::new()]
+        }
+
+        let mut buffers = Vec::new();
+        for path in files {
+            let mut is_new_or_empty = false;
+            let lines = match &path {
+                Some(p) if p.exists() => {
+                    let text = fs::read_to_string(p)
+                        .unwrap_or_default()
+                        .replace('\t', "    ");
+                    if text.trim().is_empty() {
+                        is_new_or_empty = true;
+                        vec![String::new()]
+                    } else {
+                        let ls: Vec<String> = text.lines().map(str::to_string).collect();
+                        if ls.is_empty() {
+                            vec![String::new()]
+                        } else {
+                            ls
+                        }
+                    }
+                }
+                _ => {
+                    is_new_or_empty = true;
+                    vec![String::new()]
+                }
+            };
+
+            let mut buf = BufferState {
+                lines,
+                file: path,
+                ..Default::default()
+            };
+
+            if is_new_or_empty && config.auto_title_page {
+                buf.lines = vec![
+                    "Title: Untitled".to_string(),
+                    "Credit: Written by".to_string(),
+                    "Author: ".to_string(),
+                    "Draft date: ".to_string(),
+                    "Contact: ".to_string(),
+                    "".to_string(),
+                    "".to_string(),
+                ];
+                buf.cursor_y = buf.lines.len() - 1;
+                buf.dirty = true;
+            } else if config.goto_end {
+                buf.cursor_y = buf.lines.len().saturating_sub(1);
+                buf.cursor_x = buf.lines[buf.cursor_y].chars().count();
             }
-        };
+            buffers.push(buf);
+        }
+
+        let has_multiple_buffers = buffers.len() > 1;
 
         let mut app = Self {
-            config: Config::load(&cli),
-            lines,
-            types: vec![],
-            layout: vec![],
-            file: path,
+            config,
+            buffers,
+            current_buf_idx: 0,
+            has_multiple_buffers,
+            escape_pressed: false,
+
+            lines: Vec::new(),
+            types: Vec::new(),
+            layout: Vec::new(),
+            file: None,
             dirty: false,
             cursor_y: 0,
             cursor_x: 0,
@@ -152,29 +234,158 @@ impl App {
             compiled_search_regex: None,
         };
 
-        if is_new_or_empty && app.config.auto_title_page {
-            app.lines = vec![
-                "Title: Untitled".to_string(),
-                "Credit: Written by".to_string(),
-                "Author: ".to_string(),
-                "Draft date: ".to_string(),
-                "Contact: ".to_string(),
-                "".to_string(),
-                "".to_string(),
-            ];
-            app.cursor_y = app.lines.len() - 1;
-            app.cursor_x = 0;
-            app.dirty = true;
-        } else if app.config.goto_end {
-            app.cursor_y = app.lines.len().saturating_sub(1);
-            app.cursor_x = app.line_len(app.cursor_y);
-        }
+        let mut first_buf = std::mem::take(&mut app.buffers[0]);
+        app.swap_buffer(&mut first_buf);
 
         app.parse_document();
         app.update_autocomplete();
         app.update_layout();
         app.target_visual_x = app.current_visual_x();
         app
+    }
+
+    pub fn swap_buffer(&mut self, other: &mut BufferState) {
+        std::mem::swap(&mut self.lines, &mut other.lines);
+        std::mem::swap(&mut self.types, &mut other.types);
+        std::mem::swap(&mut self.layout, &mut other.layout);
+        std::mem::swap(&mut self.file, &mut other.file);
+        std::mem::swap(&mut self.dirty, &mut other.dirty);
+        std::mem::swap(&mut self.cursor_y, &mut other.cursor_y);
+        std::mem::swap(&mut self.cursor_x, &mut other.cursor_x);
+        std::mem::swap(&mut self.target_visual_x, &mut other.target_visual_x);
+        std::mem::swap(&mut self.scroll, &mut other.scroll);
+        std::mem::swap(&mut self.characters, &mut other.characters);
+        std::mem::swap(&mut self.locations, &mut other.locations);
+        std::mem::swap(&mut self.undo_stack, &mut other.undo_stack);
+        std::mem::swap(&mut self.redo_stack, &mut other.redo_stack);
+        std::mem::swap(&mut self.last_edit, &mut other.last_edit);
+    }
+
+    pub fn switch_buffer(&mut self, next_idx: usize) {
+        if self.buffers.len() <= 1 || next_idx == self.current_buf_idx {
+            return;
+        }
+
+        let mut current_state = BufferState::default();
+
+        self.swap_buffer(&mut current_state);
+        self.buffers[self.current_buf_idx] = current_state;
+        self.current_buf_idx = next_idx;
+
+        let mut next_state = std::mem::take(&mut self.buffers[self.current_buf_idx]);
+
+        self.swap_buffer(&mut next_state);
+
+        self.parse_document();
+        self.update_autocomplete();
+        self.update_layout();
+        self.target_visual_x = self.current_visual_x();
+
+        let file_name = self
+            .file
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "New Buffer".to_string());
+
+        let line_count = self.lines.len();
+        let line_word = if line_count == 1 { "line" } else { "lines" };
+
+        self.set_status(&format!("{} -- {} {}", file_name, line_count, line_word));
+    }
+
+    pub fn switch_next_buffer(&mut self) {
+        let next = (self.current_buf_idx + 1) % self.buffers.len();
+        self.switch_buffer(next);
+    }
+
+    pub fn switch_prev_buffer(&mut self) {
+        let prev = if self.current_buf_idx == 0 {
+            self.buffers.len() - 1
+        } else {
+            self.current_buf_idx - 1
+        };
+        self.switch_buffer(prev);
+    }
+
+    pub fn close_current_buffer(&mut self) -> bool {
+        if self.buffers.len() <= 1 {
+            return true;
+        }
+
+        self.buffers.remove(self.current_buf_idx);
+        if self.current_buf_idx >= self.buffers.len() {
+            self.current_buf_idx = self.buffers.len() - 1;
+        }
+
+        let mut dummy = BufferState::default();
+        self.swap_buffer(&mut dummy);
+
+        let mut next_state = std::mem::take(&mut self.buffers[self.current_buf_idx]);
+        self.swap_buffer(&mut next_state);
+
+        self.parse_document();
+        self.update_autocomplete();
+        self.update_layout();
+        self.target_visual_x = self.current_visual_x();
+
+        let file_name = self
+            .file
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "New Buffer".to_string());
+        let line_count = self.lines.len();
+        let line_word = if line_count == 1 { "line" } else { "lines" };
+        self.set_status(&format!("{} -- {} {}", file_name, line_count, line_word));
+
+        false
+    }
+
+    #[allow(dead_code)]
+    pub fn emergency_save(&mut self) {
+        let mut to_save = Vec::new();
+        to_save.push((self.file.clone(), &self.lines, self.dirty));
+
+        for (i, buf) in self.buffers.iter().enumerate() {
+            if i != self.current_buf_idx {
+                to_save.push((buf.file.clone(), &buf.lines, buf.dirty));
+            }
+        }
+
+        for (file, lines, dirty) in to_save {
+            if !dirty || lines.is_empty() || (lines.len() == 1 && lines[0].is_empty()) {
+                continue;
+            }
+
+            let dir = file
+                .as_ref()
+                .and_then(|p| p.parent())
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| {
+                    std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+                });
+
+            let base_name = file
+                .as_ref()
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "lottie".to_string());
+
+            let mut backup_path = dir.join(format!("{}.save", base_name));
+            let mut counter = 1;
+
+            while backup_path.exists() && counter <= 1000 {
+                backup_path = dir.join(format!("{}.save.{}", base_name, counter));
+                counter += 1;
+            }
+
+            if counter <= 1000 {
+                let content = lines.join("\n");
+                let _ = std::fs::write(&backup_path, content);
+            }
+        }
     }
 
     pub fn set_status(&mut self, msg: &str) {
@@ -1055,8 +1266,7 @@ impl App {
                 return Ok(false);
             }
 
-            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL)
-                || key.modifiers.contains(KeyModifiers::ALT);
+            let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
             let shift = key.modifiers.contains(KeyModifiers::SHIFT);
 
             match self.mode {
@@ -1094,16 +1304,25 @@ impl App {
                 AppMode::PromptSave => {
                     match key.code {
                         KeyCode::Char('y') | KeyCode::Char('Y') if !ctrl => {
+                            if self.file.is_some() && self.save().is_ok() {
+                                if self.exit_after_save && self.close_current_buffer() {
+                                    return Ok(true);
+                                }
+                                self.mode = AppMode::Normal;
+                                return Ok(false);
+                            }
                             self.filename_input = self
                                 .file
                                 .as_ref()
                                 .map(|p| p.to_string_lossy().into_owned())
                                 .unwrap_or_default();
                             self.mode = AppMode::PromptFilename;
-                            self.exit_after_save = true;
                         }
                         KeyCode::Char('n') | KeyCode::Char('N') if !ctrl => {
-                            return Ok(true);
+                            if self.exit_after_save && self.close_current_buffer() {
+                                return Ok(true);
+                            }
+                            self.mode = AppMode::Normal;
                         }
                         KeyCode::Esc => {
                             self.mode = AppMode::Normal;
@@ -1132,7 +1351,7 @@ impl App {
                                 self.file = Some(PathBuf::from(self.filename_input.trim()));
                                 match self.save() {
                                     Ok(_) => {
-                                        if self.exit_after_save {
+                                        if self.exit_after_save && self.close_current_buffer() {
                                             return Ok(true);
                                         }
                                         self.mode = AppMode::Normal;
@@ -1171,15 +1390,59 @@ impl App {
                         }
                     }
 
+                    let alt = key.modifiers.contains(KeyModifiers::ALT) || self.escape_pressed;
+                    self.escape_pressed = false;
+
                     match key.code {
-                        KeyCode::Esc => {}
+                        KeyCode::Esc => {
+                            self.escape_pressed = true;
+                        }
                         KeyCode::Char('x') if ctrl => {
                             if self.dirty {
+                                self.exit_after_save = true;
                                 self.mode = AppMode::PromptSave;
-                            } else {
+                            } else if self.close_current_buffer() {
                                 return Ok(true);
                             }
                         }
+
+                        KeyCode::Left | KeyCode::Char('<') | KeyCode::Char(',') if alt => {
+                            self.switch_prev_buffer();
+                            *update_target_x = true;
+                            *text_changed = true;
+                            *cursor_moved = true;
+                        }
+                        KeyCode::Right | KeyCode::Char('>') | KeyCode::Char('.') if alt => {
+                            self.switch_next_buffer();
+                            *update_target_x = true;
+                            *text_changed = true;
+                            *cursor_moved = true;
+                        }
+
+                        KeyCode::Left if ctrl => {
+                            self.move_word_left();
+                            *update_target_x = true;
+                            *cursor_moved = true;
+                        }
+                        KeyCode::Right if ctrl => {
+                            self.move_word_right();
+                            *update_target_x = true;
+                            *cursor_moved = true;
+                        }
+
+                        KeyCode::Backspace if ctrl || alt => {
+                            self.delete_word_back();
+                            *update_target_x = true;
+                            *text_changed = true;
+                            *cursor_moved = true;
+                        }
+                        KeyCode::Delete if ctrl || alt => {
+                            self.delete_word_forward();
+                            *update_target_x = true;
+                            *text_changed = true;
+                            *cursor_moved = true;
+                        }
+
                         KeyCode::Char('s') if ctrl => {
                             if self.file.is_some() {
                                 self.save()?;
@@ -1238,26 +1501,6 @@ impl App {
                             self.move_down();
                             *cursor_moved = true;
                         }
-                        KeyCode::PageUp => {
-                            self.move_page_up();
-                            *update_target_x = true;
-                            *cursor_moved = true;
-                        }
-                        KeyCode::PageDown => {
-                            self.move_page_down();
-                            *update_target_x = true;
-                            *cursor_moved = true;
-                        }
-                        KeyCode::Left if ctrl => {
-                            self.move_word_left();
-                            *update_target_x = true;
-                            *cursor_moved = true;
-                        }
-                        KeyCode::Right if ctrl => {
-                            self.move_word_right();
-                            *update_target_x = true;
-                            *cursor_moved = true;
-                        }
                         KeyCode::Left => {
                             self.move_left();
                             *update_target_x = true;
@@ -1265,6 +1508,16 @@ impl App {
                         }
                         KeyCode::Right => {
                             self.move_right();
+                            *update_target_x = true;
+                            *cursor_moved = true;
+                        }
+                        KeyCode::PageUp => {
+                            self.move_page_up();
+                            *update_target_x = true;
+                            *cursor_moved = true;
+                        }
+                        KeyCode::PageDown => {
+                            self.move_page_down();
                             *update_target_x = true;
                             *cursor_moved = true;
                         }
@@ -1278,6 +1531,7 @@ impl App {
                             *update_target_x = true;
                             *cursor_moved = true;
                         }
+
                         KeyCode::Enter => {
                             self.suggestion = None;
                             self.insert_newline(shift);
@@ -1285,20 +1539,8 @@ impl App {
                             *text_changed = true;
                             *cursor_moved = true;
                         }
-                        KeyCode::Backspace if ctrl => {
-                            self.delete_word_back();
-                            *update_target_x = true;
-                            *text_changed = true;
-                            *cursor_moved = true;
-                        }
                         KeyCode::Backspace => {
                             self.backspace();
-                            *update_target_x = true;
-                            *text_changed = true;
-                            *cursor_moved = true;
-                        }
-                        KeyCode::Delete if ctrl => {
-                            self.delete_word_forward();
                             *update_target_x = true;
                             *text_changed = true;
                             *cursor_moved = true;
@@ -1315,7 +1557,7 @@ impl App {
                             *text_changed = true;
                             *cursor_moved = true;
                         }
-                        KeyCode::Char(c) if !ctrl => {
+                        KeyCode::Char(c) if !ctrl && !alt => {
                             self.insert_char(c);
                             *update_target_x = true;
                             *text_changed = true;
@@ -1401,9 +1643,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     }
 
     let mut page_num_style = Style::default();
-    if !app.config.no_formatting {
-        page_num_style = page_num_style.add_modifier(Modifier::BOLD);
-    }
     if !app.config.no_color {
         page_num_style.fg = Some(Color::DarkGray);
     }
@@ -1577,7 +1816,11 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     if title_area.height > 0 {
         let app_version = env!("CARGO_PKG_VERSION");
-        let left_text = format!("  lottie {}", app_version);
+        let left_text = if app.has_multiple_buffers {
+            format!("  [{}/{}]", app.current_buf_idx + 1, app.buffers.len())
+        } else {
+            format!("  lottie {}", app_version)
+        };
         let right_text = if app.dirty { "Modified  " } else { "  " };
         let center_text = app
             .file
@@ -1742,7 +1985,10 @@ mod app_tests {
     use super::*;
 
     fn create_empty_app() -> App {
-        App::new(None, crate::config::Cli::default())
+        let mut app = App::new(crate::config::Cli::default());
+        app.config = crate::config::Config::default();
+        app.update_layout();
+        app
     }
 
     #[test]
@@ -2199,7 +2445,7 @@ mod app_tests {
         let mut cli = crate::config::Cli::default();
         cli.auto_title_page = true;
 
-        let app = App::new(None, cli);
+        let app = App::new(cli);
         assert!(
             app.lines.len() > 1,
             "Title page should generate multiple lines"
@@ -2218,7 +2464,7 @@ mod app_tests {
     fn test_app_auto_title_page_disabled() {
         let cli = crate::config::Cli::default();
 
-        let app = App::new(None, cli);
+        let app = App::new(cli);
         assert_eq!(app.lines.len(), 1, "Should only have one line");
         assert_eq!(app.lines[0], "", "Line should be empty");
         assert!(!app.dirty, "App should NOT be dirty");
@@ -2941,11 +3187,262 @@ mod app_tests {
     }
 
     #[test]
+    fn test_draw_typewriter_mode_normal() {
+        use ratatui::{
+            Terminal,
+            backend::{Backend, TestBackend},
+        };
+        let mut app = create_empty_app();
+        app.config.typewriter_mode = true;
+        app.lines = vec!["Line 1".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        assert_eq!(app.scroll, 0);
+        assert_eq!(terminal.backend_mut().get_cursor_position().unwrap().y, 1);
+    }
+
+    #[test]
+    fn test_draw_typewriter_mode_strict() {
+        use ratatui::{
+            Terminal,
+            backend::{Backend, TestBackend},
+        };
+        let mut app = create_empty_app();
+        app.config.strict_typewriter_mode = true;
+        app.lines = vec!["Line 1".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        assert_eq!(terminal.backend_mut().get_cursor_position().unwrap().y, 12);
+    }
+
+    #[test]
+    fn test_draw_active_action_highlight() {
+        use ratatui::style::Color;
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+
+        app.config.highlight_active_action = true;
+        app.config.no_color = false;
+
+        app.lines = vec!["An action line".to_string(), "".to_string(), "".to_string()];
+        app.types = vec![LineType::Action, LineType::Empty, LineType::Empty];
+        app.cursor_y = 2;
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut found_action_text = false;
+
+        for y in 0..24 {
+            for x in 0..80 {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == "A" {
+                    found_action_text = true;
+                    assert_eq!(
+                        cell.fg,
+                        Color::White,
+                        "Active action line above empty lines should be forced to white"
+                    );
+                }
+            }
+        }
+        assert!(found_action_text, "Action text should be rendered");
+    }
+
+    fn send_key_press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
+        use crossterm::event::{Event, KeyEvent, KeyEventKind, KeyEventState};
+        let mut update_target_x = false;
+        let mut text_changed = false;
+        let mut cursor_moved = false;
+
+        let ev = Event::Key(KeyEvent {
+            code,
+            modifiers,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+
+        let _ = app.handle_event(
+            ev,
+            &mut update_target_x,
+            &mut text_changed,
+            &mut cursor_moved,
+        );
+    }
+
+    #[test]
+    fn test_nano_multibuffer_indicator_persistence() {
+        let mut app = create_empty_app();
+        app.buffers = vec![BufferState::default(), BufferState::default()];
+        app.has_multiple_buffers = true;
+        app.current_buf_idx = 0;
+
+        send_key_press(&mut app, KeyCode::Char('>'), KeyModifiers::ALT);
+        assert_eq!(app.current_buf_idx, 1, "Failed to switch buffer via Alt+>");
+
+        let mut dummy1 = false;
+        let mut dummy2 = false;
+        let mut dummy3 = false;
+        app.handle_event(
+            crossterm::event::Event::Key(crossterm::event::KeyEvent {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: crossterm::event::KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::empty(),
+            }),
+            &mut dummy1,
+            &mut dummy2,
+            &mut dummy3,
+        )
+        .unwrap();
+
+        assert_eq!(app.buffers.len(), 1, "Buffer should be closed");
+        assert!(
+            app.has_multiple_buffers,
+            "Multiple buffers flag must not be reset to false"
+        );
+
+        use ratatui::{Terminal, backend::TestBackend};
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let mut content = String::new();
+        let term_buffer = terminal.backend().buffer();
+        for x in 0..80u16 {
+            content.push_str(term_buffer[(x, 0)].symbol());
+        }
+
+        assert!(
+            content.contains("[1/1]"),
+            "Title bar should contain '[1/1]' because has_multiple_buffers is true, got: {}",
+            content
+        );
+        assert!(
+            !content.contains("lottie 0."),
+            "Title bar should NOT contain program name when running in multibuffer history mode"
+        );
+    }
+
+    #[test]
+    fn test_buffer_state_isolation_on_switch() {
+        let mut app = create_empty_app();
+
+        app.buffers = vec![
+            BufferState {
+                lines: vec!["".to_string()],
+                ..Default::default()
+            },
+            BufferState {
+                lines: vec!["".to_string()],
+                ..Default::default()
+            },
+        ];
+        app.has_multiple_buffers = true;
+
+        app.insert_char('A');
+        assert_eq!(app.lines[0], "A");
+        assert!(app.dirty);
+
+        app.switch_next_buffer();
+        assert_eq!(app.current_buf_idx, 1);
+        assert_eq!(app.lines[0], "");
+        assert!(!app.dirty);
+
+        app.insert_char('B');
+        app.insert_char('C');
+        assert_eq!(app.cursor_x, 2);
+
+        app.switch_next_buffer();
+        assert_eq!(app.current_buf_idx, 0);
+
+        assert_eq!(app.lines[0], "A");
+        assert_eq!(app.cursor_x, 1);
+        assert!(app.dirty);
+    }
+
+    #[test]
+    fn test_escape_state_machine_simulates_alt() {
+        let mut app = create_empty_app();
+        app.lines = vec!["word1 word2".to_string()];
+        app.cursor_x = 11;
+
+        send_key_press(&mut app, KeyCode::Esc, KeyModifiers::empty());
+        assert!(app.escape_pressed, "Esc state must be captured");
+
+        send_key_press(&mut app, KeyCode::Backspace, KeyModifiers::empty());
+
+        assert_eq!(
+            app.lines[0], "word1 ",
+            "Esc + Backspace should delete whole word"
+        );
+        assert!(!app.escape_pressed, "Esc state must be consumed and reset");
+    }
+
+    #[test]
+    fn test_nano_navigation_and_deletion_shortcuts() {
+        let mut app = create_empty_app();
+        app.buffers = vec![
+            BufferState {
+                lines: vec!["".to_string()],
+                ..Default::default()
+            },
+            BufferState {
+                lines: vec!["".to_string()],
+                ..Default::default()
+            },
+        ];
+        app.has_multiple_buffers = true;
+
+        app.lines = vec!["one two three".to_string()];
+        app.cursor_x = 4;
+
+        send_key_press(&mut app, KeyCode::Right, KeyModifiers::CONTROL);
+        assert_eq!(app.cursor_x, 7, "Ctrl+Right should trigger move_word_right");
+
+        send_key_press(&mut app, KeyCode::Backspace, KeyModifiers::ALT);
+        assert_eq!(
+            app.cursor_x, 4,
+            "Alt+Backspace should delete word backwards"
+        );
+
+        send_key_press(&mut app, KeyCode::Char('>'), KeyModifiers::ALT);
+        assert_eq!(
+            app.current_buf_idx, 1,
+            "Alt+> should trigger switch_next_buffer"
+        );
+
+        send_key_press(&mut app, KeyCode::Char('<'), KeyModifiers::ALT);
+        assert_eq!(
+            app.current_buf_idx, 0,
+            "Alt+< should trigger switch_prev_buffer"
+        );
+    }
+
+    #[test]
     fn test_e2e_tutorial_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.7
+Draft date: Version 0.2.8
 Contact:
 contact@renecoignard.com
 
@@ -3036,7 +3533,7 @@ And Beat itself, of course: https://www.beat-app.fi/
 
 > FADE OUT"#;
 
-        let mut app = App::new(None, crate::config::Cli::default());
+        let mut app = App::new(crate::config::Cli::default());
         app.lines = tutorial_text.lines().map(|s| s.to_string()).collect();
         app.cursor_y = 0;
         app.cursor_x = 0;
@@ -3288,86 +3785,5 @@ And Beat itself, of course: https://www.beat-app.fi/
             app.status_msg.as_deref(),
             Some("line 93/93 (100%), col 11/11 (100%), char 4074/4074 (100%)")
         );
-    }
-
-    #[test]
-    fn test_draw_typewriter_mode_normal() {
-        use ratatui::{
-            Terminal,
-            backend::{Backend, TestBackend},
-        };
-        let mut app = create_empty_app();
-        app.config.typewriter_mode = true;
-        app.lines = vec!["Line 1".to_string()];
-        app.types = vec![LineType::Action];
-        app.cursor_y = 0;
-        app.update_layout();
-
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
-
-        assert_eq!(app.scroll, 0);
-        assert_eq!(terminal.backend_mut().get_cursor_position().unwrap().y, 1);
-    }
-
-    #[test]
-    fn test_draw_typewriter_mode_strict() {
-        use ratatui::{
-            Terminal,
-            backend::{Backend, TestBackend},
-        };
-        let mut app = create_empty_app();
-        app.config.strict_typewriter_mode = true;
-        app.lines = vec!["Line 1".to_string()];
-        app.types = vec![LineType::Action];
-        app.cursor_y = 0;
-        app.update_layout();
-
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
-
-        assert_eq!(terminal.backend_mut().get_cursor_position().unwrap().y, 12);
-    }
-
-    #[test]
-    fn test_draw_active_action_highlight() {
-        use ratatui::style::Color;
-        use ratatui::{Terminal, backend::TestBackend};
-        let mut app = create_empty_app();
-
-        app.config.highlight_active_action = true;
-        app.config.no_color = false;
-
-        app.lines = vec!["An action line".to_string(), "".to_string(), "".to_string()];
-        app.types = vec![LineType::Action, LineType::Empty, LineType::Empty];
-        app.cursor_y = 2;
-        app.update_layout();
-
-        let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
-
-        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
-
-        let buffer = terminal.backend().buffer();
-        let mut found_action_text = false;
-
-        for y in 0..24 {
-            for x in 0..80 {
-                let cell = &buffer[(x, y)];
-                if cell.symbol() == "A" {
-                    found_action_text = true;
-                    assert_eq!(
-                        cell.fg,
-                        Color::White,
-                        "Active action line above empty lines should be forced to white"
-                    );
-                }
-            }
-        }
-        assert!(found_action_text, "Action text should be rendered");
     }
 }

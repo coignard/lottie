@@ -19,11 +19,115 @@ use clap::Parser;
 use std::fs;
 use std::path::PathBuf;
 
+const DEFAULT_CONFIG: &str = r#"## Lottie configuration file
+## Place this file at ~/.config/lottie/lottie.conf
+##
+## Use "set <option>" to enable a boolean option or assign a value.
+## Use "unset <option>" to disable a boolean option.
+
+## Editor View
+
+# Show scene numbers in the left margin.
+set show_scene_numbers
+
+# Show page numbers on the right side of the screen.
+set show_page_numbers
+
+# Automatically hide Fountain markup when the cursor is not
+# on the current line.
+set hide_markup
+
+# Highlight active action line (or nearest action line above)
+# in bright white color.
+unset highlight_active_action
+
+# Typewriter mode
+unset typewriter_mode
+
+# Strict typewriter mode (forces the active line to stay in the exact
+# vertical center of the terminal at all times, even at the beginning
+# of the document).
+unset strict_typewriter_mode
+
+# Focus mode
+unset focus_mode
+
+## Editor Behavior
+
+# Auto-complete scene headings (INT./EXT.) and character names.
+set autocomplete
+
+# Automatically append (CONT'D) to a character name when they speak
+# consecutively.
+set auto_contd
+
+# Automatically insert paragraph breaks (double newlines) after Action,
+# Dialogue, and similar elements.
+set auto_paragraph_breaks
+
+# Automatically insert a closing parenthesis when typing an opening one.
+set match_parentheses
+
+# Automatically close paired elements such as [[]], /**/, and ****.
+set close_elements
+
+# Insert a blank Title Page template when creating a new file.
+unset auto_title_page
+
+## Formatting
+
+# The string appended to a character name when they speak consecutively.
+set contd_extension "(CONT'D)"
+
+# Allow action blocks to be split across pages.
+# Use "unset break_actions" to keep action blocks on a single page.
+set break_actions
+
+# Open the file with the cursor at the end
+unset goto_end
+
+# Styling applied to scene headings. Available values: "bold",
+# "underline", "bold underline"
+set heading_style "bold"
+
+# Number of blank lines before a scene heading. Set to 2 for double
+# spacing before each new scene.
+set heading_spacing 1
+
+# Styling applied to shots (e.g. !! CLOSE UP). Available values: "bold",
+# "underline", "bold underline"
+set shot_style "bold"
+
+## Display & Terminal
+
+# Disable all terminal colors. Lottie will still render bold, italic,
+# and underline modifiers if supported by your terminal. Lottie tries
+# to detect color support automatically.
+unset no_color
+
+# Disable all text formatting (bold, italic, underline).
+unset no_formatting
+
+# Force output of ANSI color escape codes, even if Lottie detects
+# that your terminal does not support them.
+unset force_ansi
+
+# Force the use of ASCII characters instead of Unicode (e.g., for page
+# break lines). Useful for older terminals. Lottie will try to detect
+# Unicode support automatically.
+unset force_ascii
+"#;
+
 #[derive(Parser, Debug, Default, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct Cli {
-    /// The fountain file to open
-    pub file: Option<PathBuf>,
+    /// The fountain file(s) to open
+    #[arg(num_args = 0..)]
+    pub files: Vec<PathBuf>,
+
+    /// Path to a custom configuration file
+    #[arg(long, value_name = "FILE")]
+    pub config: Option<PathBuf>,
 
     /// Hide scene numbers
     #[arg(long)]
@@ -268,16 +372,31 @@ impl Config {
     pub fn load(cli: &Cli) -> Self {
         let mut config = Self::default();
 
-        let config_dir = std::env::var("XDG_CONFIG_HOME")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-                PathBuf::from(home).join(".config")
-            });
-        let config_path = config_dir.join("lottie").join("lottie.conf");
+        let is_custom_path = cli.config.is_some();
+        let config_path = cli.config.clone().or_else(|| {
+            directories::ProjectDirs::from("org", "coignard", "lottie")
+                .map(|proj_dirs| proj_dirs.config_dir().join("lottie.conf"))
+        });
 
-        if let Ok(content) = fs::read_to_string(&config_path) {
-            config.parse_config_str(&content);
+        if let Some(path) = config_path {
+            if !is_custom_path && !path.exists() {
+                if let Some(parent) = path.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::write(&path, DEFAULT_CONFIG);
+            }
+
+            match fs::read_to_string(&path) {
+                Ok(content) => config.parse_config_str(&content),
+                Err(e) if is_custom_path => {
+                    eprintln!(
+                        "Warning: Failed to load custom config file at '{}': {}",
+                        path.display(),
+                        e
+                    );
+                }
+                _ => {}
+            }
         }
 
         config.show_scene_numbers &= !cli.hide_scene_numbers;

@@ -1,6 +1,6 @@
 [package]
 name = "lottie"
-version = "0.2.7"
+version = "0.2.8"
 authors = [
     "René Coignard <contact@renecoignard.com>"
 ]
@@ -22,6 +22,7 @@ regex = "1.12.3"
 unicode-width = "0.2.2"
 supports-color = "3.0.2"
 supports-unicode = "3.0.0"
+directories = "6.0.0"
 
 [profile.release]
 strip = true

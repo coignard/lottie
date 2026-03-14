@@ -209,7 +209,7 @@ pub fn export_document(
 
             let p_str = format!("{}.", pnum);
             if with_ansi {
-                line_str.push_str(&format!("\x1b[90m\x1b[1m{}\x1b[0m", p_str));
+                line_str.push_str(&format!("\x1b[90m{}\x1b[0m", p_str));
             } else {
                 line_str.push_str(&p_str);
             }
@@ -261,7 +261,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.7
+Draft date: Version 0.2.8
 Contact:
 contact@renecoignard.com
 
@@ -439,7 +439,7 @@ And Beat itself, of course: https://www.beat-app.fi/
 
         assert_eq!(
             ansi_lines[idx_scene],
-            "     \x1b[90m1\x1b[0m      \x1b[1m\x1b[97mINT. FLAT IN WOLFEN-NORD - DAY\x1b[0m                                    \x1b[90m\x1b[1m1.\x1b[0m"
+            "     \x1b[90m1\x1b[0m      \x1b[1m\x1b[97mINT. FLAT IN WOLFEN-NORD - DAY\x1b[0m                                    \x1b[90m1.\x1b[0m"
         );
 
         assert_eq!(

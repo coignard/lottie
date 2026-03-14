@@ -38,14 +38,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     if let Some(export_path) = cli.export.clone() {
-        let in_path = cli.file.clone();
+        let in_path = cli.files.first().cloned();
 
         if in_path.is_none() || !in_path.as_ref().unwrap().exists() {
             eprintln!("Error: Input file does not exist or was not provided.");
             std::process::exit(1);
         }
 
-        let mut app = App::new(in_path, cli.clone());
+        let mut app = App::new(cli.clone());
 
         let fmt = cli.format.to_lowercase();
         let with_ansi = match fmt.as_str() {
@@ -97,8 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         default_panic(info);
     }));
 
-    let path = cli.file.clone();
-    let mut app = App::new(path, cli);
+    let mut app = App::new(cli);
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
