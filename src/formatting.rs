@@ -24,6 +24,22 @@ use ratatui::{
 
 use crate::types::get_marker_color;
 
+pub trait StringCaseExt {
+    fn to_uppercase_1to1(&self) -> String;
+}
+
+impl StringCaseExt for str {
+    fn to_uppercase_1to1(&self) -> String {
+        self.chars()
+            .map(|c| {
+                let mut upper = c.to_uppercase();
+                let first = upper.next().unwrap();
+                if upper.next().is_some() { c } else { first }
+            })
+            .collect()
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct LineFormatting {
     pub bold: HashSet<usize>,
@@ -250,6 +266,23 @@ pub fn render_inline(
 #[cfg(test)]
 mod formatting_tests {
     use super::*;
+
+    fn assert_upper_1to1(input: &str, expected: &str) {
+        let result = input.to_uppercase_1to1();
+        assert_eq!(
+            result, expected,
+            "Uppercase value mismatch for input '{}'",
+            input
+        );
+        assert_eq!(
+            input.chars().count(),
+            result.chars().count(),
+            "FATAL: Length invariant violated for input '{}'. Expected {} chars, got {}.",
+            input,
+            input.chars().count(),
+            result.chars().count()
+        );
+    }
 
     #[test]
     fn test_parse_formatting_bold() {
@@ -548,5 +581,64 @@ mod formatting_tests {
                 .add_modifier
                 .contains(Modifier::REVERSED)
         );
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_ascii_and_latin() {
+        assert_upper_1to1("hello", "HELLO");
+        assert_upper_1to1("Hello World!", "HELLO WORLD!");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_cyrillic() {
+        assert_upper_1to1("привет", "ПРИВЕТ");
+        assert_upper_1to1("ёжик", "ЁЖИК");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_german_eszett() {
+        assert_upper_1to1("straße", "STRAßE");
+        assert_upper_1to1("groß", "GROß");
+        assert_upper_1to1("weiß", "WEIß");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_typographic_ligatures() {
+        assert_upper_1to1("ﬁnancial", "ﬁNANCIAL");
+        assert_upper_1to1("ﬂight", "ﬂIGHT");
+        assert_upper_1to1("baﬄe", "BAﬄE");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_emojis_and_zwj() {
+        assert_upper_1to1("🦀 rust", "🦀 RUST");
+        assert_upper_1to1("🧑‍🧑‍🧒‍🧒 family", "🧑‍🧑‍🧒‍🧒 FAMILY");
+        assert_upper_1to1("🏳️‍🌈 pride", "🏳️‍🌈 PRIDE");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_greek_expanding() {
+        assert_upper_1to1("αβγ", "ΑΒΓ");
+        assert_upper_1to1("φαΐ", "ΦΑΐ");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_combining_diacritics() {
+        assert_upper_1to1("áb́ć", "ÁB́Ć");
+        assert_upper_1to1("приве́т", "ПРИВЕ́Т");
+    }
+
+    #[test]
+    fn test_to_uppercase_1to1_dutch_ligature() {
+        let input = "ĳsvogel";
+        let result = input.to_uppercase_1to1();
+
+        assert_eq!(
+            input.chars().count(),
+            result.chars().count(),
+            "Length invariant failed for Dutch ligature"
+        );
+
+        assert!(result.ends_with("SVOGEL"));
     }
 }

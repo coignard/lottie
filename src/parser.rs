@@ -21,7 +21,7 @@ use std::sync::LazyLock;
 use crate::types::LineType;
 
 static META_KEY_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^([A-Za-z][A-Za-z\s]*):\s*").unwrap());
+    LazyLock::new(|| Regex::new(r"^([\p{L}][\p{L}\s]*):\s*").unwrap());
 
 pub struct Parser;
 
@@ -35,7 +35,7 @@ impl Parser {
             if trim.is_empty() {
                 continue;
             }
-            if META_KEY_RE.is_match(trim) {
+            if META_KEY_RE.is_match(trim) && !Self::is_transition_format(trim) {
                 in_header = true;
             }
             break;
@@ -172,12 +172,7 @@ impl Parser {
                 continue;
             }
 
-            let is_transition = prev_empty
-                && ((trim.ends_with("TO:") || trim.ends_with("IN:"))
-                    && Self::is_uppercase_content(trim)
-                    || trim == "FADE TO BLACK."
-                    || trim == "FADE OUT."
-                    || trim == "CUT TO BLACK.");
+            let is_transition = prev_empty && Self::is_transition_format(trim);
 
             if is_transition {
                 types[i] = LineType::Transition;
@@ -223,6 +218,13 @@ impl Parser {
         types
     }
 
+    pub fn is_transition_format(s: &str) -> bool {
+        (s.ends_with(':') && Self::is_uppercase_content(s))
+            || s == "FADE TO BLACK."
+            || s == "FADE OUT."
+            || s == "CUT TO BLACK."
+    }
+
     fn forced_type(trim: &str, prev_empty: bool) -> Option<LineType> {
         let first = trim.chars().next()?;
         let last = trim.chars().last()?;
@@ -255,6 +257,7 @@ impl Parser {
     fn is_scene_heading(s: &str) -> bool {
         let u = s.to_uppercase();
         let prefixes = ["INT", "EXT", "EST", "I/E", "E/I", "I./E", "E./I"];
+
         for p in prefixes {
             if let Some(rest) = u.strip_prefix(p) {
                 if rest.is_empty() {
@@ -267,6 +270,21 @@ impl Parser {
                 }
             }
         }
+
+        if Self::is_uppercase_content(s)
+            && let Some(dot_idx) = u.find(". ")
+        {
+            let prefix = &u[..dot_idx];
+
+            if !prefix.contains(' ') && !prefix.is_empty() {
+                let remainder = &u[dot_idx..];
+
+                if remainder.contains(" - ") || remainder.contains(" - ") {
+                    return true;
+                }
+            }
+        }
+
         false
     }
 
@@ -526,5 +544,64 @@ mod parser_tests {
         assert_eq!(types[1], LineType::Dialogue);
         assert_eq!(types[2], LineType::Dialogue);
         assert_eq!(types[3], LineType::Dialogue);
+    }
+
+    #[test]
+    fn test_parse_transition_at_start_not_metadata() {
+        let lines = vec![
+            "CUT TO:".to_string(),
+            "".to_string(),
+            "INT. ROOM - DAY".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::Transition);
+    }
+
+    #[test]
+    fn test_parse_russian_metadata() {
+        let lines = vec![
+            "Автор: Рене".to_string(),
+            "".to_string(),
+            "INT. ROOM - DAY".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::MetadataKey);
+    }
+
+    #[test]
+    fn test_parse_russian_transition() {
+        let lines = vec![
+            "ИЗ ЗТМ:".to_string(),
+            "".to_string(),
+            "ИНТ. КОМНАТА - ДЕНЬ".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::Transition);
+    }
+
+    #[test]
+    fn test_parse_transition_not_metadata_at_eof_or_start() {
+        let lines = vec![
+            "CUT TO:".to_string(),
+            "".to_string(),
+            "INT. ROOM - DAY".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::Transition);
+        assert_eq!(types[1], LineType::Empty);
+        assert_eq!(types[2], LineType::SceneHeading);
+    }
+
+    #[test]
+    fn test_parse_russian_metadata_with_unicode_regex() {
+        let lines = vec![
+            "Автор: Рене".to_string(),
+            "".to_string(),
+            "ИНТ. КОМНАТА - ДЕНЬ".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::MetadataKey);
+        assert_eq!(types[1], LineType::Empty);
+        assert_eq!(types[2], LineType::SceneHeading);
     }
 }

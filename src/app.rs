@@ -30,7 +30,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKin
 
 use crate::{
     config::{Cli, Config},
-    formatting::{RenderConfig, render_inline},
+    formatting::{RenderConfig, StringCaseExt, render_inline},
     layout::{VisualRow, build_layout, find_visual_cursor, strip_sigils},
     parser::Parser,
     types::{LineType, PAGE_WIDTH, base_style},
@@ -649,10 +649,10 @@ impl App {
                     full_name
                 };
                 if !name.is_empty() {
-                    self.characters.insert(name.to_uppercase());
+                    self.characters.insert(name.to_uppercase_1to1());
                 }
             } else if *t == LineType::SceneHeading {
-                let scene = self.lines[i].trim().to_uppercase();
+                let scene = self.lines[i].trim().to_uppercase_1to1();
                 if let Some(idx) = scene.find(' ') {
                     let loc = scene[idx + 1..].trim().to_string();
                     if !loc.is_empty() {
@@ -693,7 +693,7 @@ impl App {
             self.types.get(self.cursor_y),
             Some(LineType::Character) | Some(LineType::DualDialogueCharacter)
         );
-        let upper_line = line.to_uppercase();
+        let upper_line = line.to_uppercase_1to1();
 
         if is_char_type || upper_line.starts_with('@') {
             let input = upper_line.trim_start_matches('@').trim_start();
@@ -767,7 +767,9 @@ impl App {
             let target_row = &self.layout[target_vi];
             let is_last = target_row.char_end == self.line_len(target_row.line_idx);
             self.cursor_y = target_row.line_idx;
-            self.cursor_x = target_row.visual_to_logical_x(self.target_visual_x, is_last);
+            self.cursor_x = target_row
+                .visual_to_logical_x(self.target_visual_x, is_last)
+                .min(self.line_len(self.cursor_y));
         } else {
             self.cursor_y = 0;
             self.cursor_x = 0;
@@ -785,9 +787,11 @@ impl App {
             let target_row = &self.layout[target_vi];
             let is_last = target_row.char_end == self.line_len(target_row.line_idx);
             self.cursor_y = target_row.line_idx;
-            self.cursor_x = target_row.visual_to_logical_x(self.target_visual_x, is_last);
+            self.cursor_x = target_row
+                .visual_to_logical_x(self.target_visual_x, is_last)
+                .min(self.line_len(self.cursor_y));
         } else {
-            self.cursor_y = self.lines.len() - 1;
+            self.cursor_y = self.lines.len().saturating_sub(1);
             self.cursor_x = self.line_len(self.cursor_y);
         }
     }
@@ -905,6 +909,9 @@ impl App {
     }
 
     pub fn insert_newline(&mut self, is_shift: bool) {
+        self.save_state(true);
+        self.last_edit = LastEdit::Other;
+
         if is_shift {
             let b = self.byte_of(self.cursor_y, self.cursor_x);
             let tail = self.lines[self.cursor_y].split_off(b);
@@ -914,9 +921,6 @@ impl App {
             self.dirty = true;
             return;
         }
-
-        self.save_state(true);
-        self.last_edit = LastEdit::Other;
 
         let t = self
             .types
@@ -1106,6 +1110,11 @@ impl App {
         }
         self.last_edit = LastEdit::Delete;
 
+        let max = self.line_len(self.cursor_y);
+        if self.cursor_x > max {
+            self.cursor_x = max;
+        }
+
         if self.cursor_x > 0 {
             let line = &self.lines[self.cursor_y];
             let cx = self.cursor_x;
@@ -1157,6 +1166,11 @@ impl App {
         }
         self.last_edit = LastEdit::Delete;
 
+        let max = self.line_len(self.cursor_y);
+        if self.cursor_x > max {
+            self.cursor_x = max;
+        }
+
         let line = &self.lines[self.cursor_y];
         let cx = self.cursor_x;
 
@@ -1182,7 +1196,6 @@ impl App {
             }
         }
 
-        let max = self.line_len(self.cursor_y);
         if self.cursor_x < max {
             let b = self.byte_of(self.cursor_y, self.cursor_x);
             self.lines[self.cursor_y].remove(b);
@@ -1195,6 +1208,11 @@ impl App {
     }
 
     pub fn delete_word_back(&mut self) {
+        let max = self.line_len(self.cursor_y);
+        if self.cursor_x > max {
+            self.cursor_x = max;
+        }
+
         if self.cursor_x == 0 {
             self.backspace();
             return;
@@ -1216,6 +1234,11 @@ impl App {
     }
 
     pub fn delete_word_forward(&mut self) {
+        let max = self.line_len(self.cursor_y);
+        if self.cursor_x > max {
+            self.cursor_x = max;
+        }
+
         let mut chars: Vec<char> = self.lines[self.cursor_y].chars().collect();
         if self.cursor_x == chars.len() {
             self.delete_forward();
@@ -1636,7 +1659,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     let mut sug_style = Style::default();
     if !app.config.no_formatting {
-        sug_style = sug_style.add_modifier(Modifier::DIM);
+        sug_style = sug_style.add_modifier(Modifier::DIM | Modifier::BOLD);
     }
     if !app.config.no_color {
         sug_style.fg = Some(Color::DarkGray);
@@ -1728,16 +1751,16 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
                 if row.line_type == LineType::SceneHeading || row.line_type == LineType::Transition
                 {
-                    display = display.to_uppercase();
+                    display = display.to_uppercase_1to1();
                 } else if row.line_type == LineType::Character
                     || row.line_type == LineType::DualDialogueCharacter
                 {
                     if let Some(idx) = display.find('(') {
-                        let name = display[..idx].to_uppercase();
+                        let name = display[..idx].to_uppercase_1to1();
                         let ext = &display[idx..];
                         display = format!("{}{}", name, ext);
                     } else {
-                        display = display.to_uppercase();
+                        display = display.to_uppercase_1to1();
                     }
                 }
 
@@ -3438,11 +3461,72 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_vertical_movement_cursor_clamp() {
+        let mut app = create_empty_app();
+        app.lines = vec![
+            "Short".to_string(),
+            "A very long line indeed".to_string(),
+            "Tiny".to_string(),
+        ];
+        app.types = vec![LineType::Action, LineType::Action, LineType::Action];
+        app.update_layout();
+
+        app.cursor_y = 1;
+        app.cursor_x = 20;
+        app.target_visual_x = 20;
+
+        app.move_up();
+        assert_eq!(app.cursor_y, 0);
+        assert_eq!(
+            app.cursor_x, 5,
+            "Cursor should be clamped to the length of 'Short'"
+        );
+
+        app.cursor_y = 1;
+        app.cursor_x = 20;
+
+        app.move_down();
+        assert_eq!(app.cursor_y, 2);
+        assert_eq!(
+            app.cursor_x, 4,
+            "Cursor should be clamped to the length of 'Tiny'"
+        );
+    }
+
+    #[test]
+    fn test_app_deletion_out_of_bounds_cursor_clamp() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Word".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 100;
+
+        app.backspace();
+        assert_eq!(
+            app.cursor_x, 3,
+            "Cursor should jump to line end and delete last char"
+        );
+        assert_eq!(app.lines[0], "Wor");
+    }
+
+    #[test]
+    fn test_app_delete_forward_out_of_bounds_cursor_clamp() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Word".to_string(), "Next".to_string()];
+        app.cursor_y = 0;
+        app.cursor_x = 100;
+
+        app.delete_forward();
+        assert_eq!(app.cursor_x, 4);
+        assert_eq!(app.lines[0], "WordNext");
+        assert_eq!(app.lines.len(), 1);
+    }
+
+    #[test]
     fn test_e2e_tutorial_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.8
+Draft date: Version 0.2.9
 Contact:
 contact@renecoignard.com
 

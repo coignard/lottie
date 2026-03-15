@@ -1,6 +1,6 @@
 [package]
 name = "lottie"
-version = "0.2.8"
+version = "0.2.9"
 authors = [
     "René Coignard <contact@renecoignard.com>"
 ]
@@ -23,6 +23,9 @@ unicode-width = "0.2.2"
 supports-color = "3.0.2"
 supports-unicode = "3.0.0"
 directories = "6.0.0"
+
+[dev-dependencies]
+proptest = "1.10.0"
 
 [profile.release]
 strip = true

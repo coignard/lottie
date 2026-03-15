@@ -25,11 +25,24 @@ pub const LINES_PER_PAGE: usize = 55;
 pub struct Fmt {
     pub indent: u16,
     pub width: u16,
+    pub wrap_indent: Option<u16>,
 }
 
 impl Fmt {
     pub const fn new(indent: u16, width: u16) -> Self {
-        Self { indent, width }
+        Self {
+            indent,
+            width,
+            wrap_indent: None,
+        }
+    }
+
+    pub const fn new_with_wrap(indent: u16, width: u16, wrap_indent: u16) -> Self {
+        Self {
+            indent,
+            width,
+            wrap_indent: Some(wrap_indent),
+        }
     }
 }
 
@@ -37,7 +50,7 @@ pub const FMT_ACTION: Fmt = Fmt::new(0, 60);
 pub const FMT_SCENE: Fmt = Fmt::new(0, 60);
 pub const FMT_CHARACTER: Fmt = Fmt::new(20, 38);
 pub const FMT_DIALOGUE: Fmt = Fmt::new(11, 35);
-pub const FMT_PAREN: Fmt = Fmt::new(16, 31);
+pub const FMT_PAREN: Fmt = Fmt::new_with_wrap(16, 28, 17);
 pub const FMT_TRANSITION: Fmt = Fmt::new(0, 60);
 pub const FMT_CENTERED: Fmt = Fmt::new(0, 60);
 pub const FMT_LYRICS: Fmt = Fmt::new(0, 60);
@@ -202,7 +215,7 @@ mod types_tests {
     fn test_fmt_dimensions_parenthetical() {
         let fmt = LineType::Parenthetical.fmt();
         assert_eq!(fmt.indent, 16);
-        assert_eq!(fmt.width, 31);
+        assert_eq!(fmt.width, 28);
     }
 
     #[test]

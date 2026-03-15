@@ -143,12 +143,15 @@ pub fn is_printable(lt: LineType) -> bool {
 fn tokenize_text(text: &str) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut current = String::new();
+    let mut prev_was_sep = true;
     for c in text.chars() {
+        let is_sep = c.is_whitespace() || c == '-';
         current.push(c);
-        if c.is_whitespace() || c == '-' {
+        if is_sep && !prev_was_sep {
             tokens.push(current);
             current = String::new();
         }
+        prev_was_sep = is_sep;
     }
     if !current.is_empty() {
         tokens.push(current);
@@ -329,18 +332,6 @@ pub fn build_layout(
             strip_sigils(&raw_line, lt).to_string()
         };
 
-        if lt == LineType::SceneHeading || lt == LineType::Transition {
-            display = display.to_uppercase();
-        } else if lt == LineType::Character || lt == LineType::DualDialogueCharacter {
-            if let Some(idx) = display.find('(') {
-                let name = display[..idx].to_uppercase();
-                let ext = &display[idx..];
-                display = format!("{}{}", name, ext);
-            } else {
-                display = display.to_uppercase();
-            }
-        }
-
         if !is_active
             && matches!(
                 lt,
@@ -405,6 +396,7 @@ pub fn build_layout(
             sigil_left_chars(&raw_line, lt)
         };
 
+        let total_original_chars = raw_line.chars().count();
         let mut row_disp_start: usize = 0;
         let mut current_line = String::new();
         let tokens = tokenize_text(&final_display);
@@ -415,14 +407,24 @@ pub fn build_layout(
 
             while !remaining_token.is_empty() {
                 let token_plain = remaining_token.replace("**", "").replace(['*', '_'], "");
-                let token_w = UnicodeWidthStr::width(token_plain.as_str()) as u16;
+                let is_pure_space = token_plain.chars().all(|c| c.is_whitespace());
+
+                let token_w_trimmed = if is_pure_space {
+                    UnicodeWidthStr::width(token_plain.as_str()) as u16
+                } else {
+                    UnicodeWidthStr::width(token_plain.trim_end_matches(' ')) as u16
+                };
+
                 let cur_plain = current_line.replace("**", "").replace(['*', '_'], "");
                 let cur_w = UnicodeWidthStr::width(cur_plain.as_str()) as u16;
 
-                if !current_line.is_empty() && cur_w + token_w > fmt_rules.width {
+                if !current_line.is_empty()
+                    && !is_pure_space
+                    && cur_w + token_w_trimmed > fmt_rules.width
+                {
                     let disp_char_len = current_line.chars().count();
-                    let raw_start = sigil_left + row_disp_start;
-                    let raw_end = raw_start + disp_char_len;
+                    let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
+                    let raw_end = (raw_start + disp_char_len).min(total_original_chars);
                     let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
 
                     logical_rows.push(VisualRow {
@@ -439,6 +441,10 @@ pub fn build_layout(
                         fmt: format_data.clone(),
                         is_phantom: false,
                     });
+
+                    if let Some(wrap_indent) = fmt_rules.wrap_indent {
+                        fmt_rules.indent = wrap_indent;
+                    }
 
                     row_disp_start += disp_char_len;
                     current_line.clear();
@@ -447,14 +453,16 @@ pub fn build_layout(
                     continue;
                 }
 
-                if current_line.is_empty() && token_w > fmt_rules.width {
+                if cur_w + token_w_trimmed > fmt_rules.width {
+                    let space_left = fmt_rules.width.saturating_sub(cur_w);
+
                     let mut chars_to_take = 0;
                     let t_chars: Vec<char> = remaining_token.chars().collect();
                     for (k, _) in t_chars.iter().enumerate() {
                         let test_str: String = t_chars[..=k].iter().collect();
                         let test_plain = test_str.replace("**", "").replace(['*', '_'], "");
                         let w = UnicodeWidthStr::width(test_plain.as_str()) as u16;
-                        if w > fmt_rules.width {
+                        if w > space_left {
                             if chars_to_take == 0 {
                                 chars_to_take = 1;
                             }
@@ -463,18 +471,14 @@ pub fn build_layout(
                         chars_to_take = k + 1;
                     }
 
-                    while chars_to_take < t_chars.len() && t_chars[chars_to_take].is_whitespace() {
-                        chars_to_take += 1;
-                    }
-
                     let part1: String = t_chars[..chars_to_take].iter().collect();
                     let part2: String = t_chars[chars_to_take..].iter().collect();
 
                     current_line.push_str(&part1);
 
                     let disp_char_len = current_line.chars().count();
-                    let raw_start = sigil_left + row_disp_start;
-                    let raw_end = raw_start + disp_char_len;
+                    let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
+                    let raw_end = (raw_start + disp_char_len).min(total_original_chars);
                     let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
 
                     logical_rows.push(VisualRow {
@@ -491,6 +495,10 @@ pub fn build_layout(
                         fmt: format_data.clone(),
                         is_phantom: false,
                     });
+
+                    if let Some(wrap_indent) = fmt_rules.wrap_indent {
+                        fmt_rules.indent = wrap_indent;
+                    }
 
                     row_disp_start += disp_char_len;
                     current_line.clear();
@@ -505,8 +513,8 @@ pub fn build_layout(
         }
 
         let disp_char_len = current_line.chars().count();
-        let raw_start = sigil_left + row_disp_start;
-        let raw_end = raw_start + disp_char_len;
+        let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
+        let raw_end = (raw_start + disp_char_len).min(total_original_chars);
         let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
 
         logical_rows.push(VisualRow {
@@ -830,6 +838,7 @@ mod layout_tests {
         assert_eq!(row.visual_to_logical_x(10, true), 7);
         assert_eq!(row.visual_to_logical_x(100, true), 13);
     }
+
     #[test]
     fn test_layout_word_wrapping() {
         let config = Config::default();
@@ -847,7 +856,8 @@ mod layout_tests {
         assert!(layout[0].char_end > 0);
         assert_eq!(layout[1].char_start, layout[0].char_end);
 
-        let first_line_width = unicode_width::UnicodeWidthStr::width(layout[0].raw_text.as_str());
+        let first_line_width =
+            unicode_width::UnicodeWidthStr::width(layout[0].raw_text.trim_end_matches(' '));
         assert!(first_line_width <= crate::types::PAGE_WIDTH as usize);
     }
 
@@ -1163,14 +1173,231 @@ mod layout_tests {
 
         let layout = build_layout(&lines, &types, 0, &config);
 
-        assert_eq!(layout.len(), 2, "Line should wrap exactly once");
+        assert_eq!(
+            layout.len(),
+            3,
+            "Line should wrap across 3 rows due to hard wrapping"
+        );
 
         assert_eq!(layout[0].char_start, 0);
-        assert_eq!(layout[0].char_end, 60);
-        assert_eq!(layout[0].raw_text, format!("Word{}", " ".repeat(56)));
+        assert_eq!(layout[0].char_end, 5);
+        assert_eq!(layout[0].raw_text, "Word ");
 
-        assert_eq!(layout[1].char_start, 60);
-        assert_eq!(layout[1].char_end, 66);
-        assert_eq!(layout[1].raw_text, "  Next".to_string());
+        assert_eq!(layout[1].char_start, 5);
+        assert_eq!(layout[1].char_end, 65);
+        assert_eq!(layout[1].raw_text, format!("{}Nex", " ".repeat(57)));
+
+        assert_eq!(layout[2].char_start, 65);
+        assert_eq!(layout[2].char_end, 66);
+        assert_eq!(layout[2].raw_text, "t".to_string());
+    }
+
+    #[test]
+    fn test_layout_parenthetical_wrap_indent() {
+        let config = Config::default();
+        let lines = vec![
+            "(this is a very long parenthetical that should wrap with a different indent)"
+                .to_string(),
+        ];
+        let types = vec![LineType::Parenthetical];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+
+        assert!(layout.len() >= 2, "Parenthetical should wrap");
+
+        assert_eq!(layout[0].indent, 16, "First line indent should be 16");
+        assert_eq!(layout[1].indent, 17, "Wrapped line indent should be 17");
+    }
+
+    #[test]
+    fn test_layout_tokenize_preserves_multiple_spaces() {
+        let config = Config::default();
+        let lines = vec!["A    B".to_string()];
+        let types = vec![LineType::Action];
+
+        let layout = build_layout(&lines, &types, 0, &config);
+
+        assert_eq!(layout.len(), 1);
+        assert_eq!(
+            layout[0].raw_text, "A    B",
+            "Multiple spaces should not be collapsed"
+        );
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use super::*;
+    use proptest::prelude::*;
+    use unicode_width::UnicodeWidthStr;
+
+    fn any_line_type() -> impl Strategy<Value = LineType> {
+        (0..15u8).prop_map(|idx| match idx {
+            0 => LineType::Action,
+            1 => LineType::SceneHeading,
+            2 => LineType::Character,
+            3 => LineType::Dialogue,
+            4 => LineType::Parenthetical,
+            5 => LineType::Transition,
+            6 => LineType::Centered,
+            7 => LineType::Lyrics,
+            8 => LineType::Note,
+            9 => LineType::Boneyard,
+            10 => LineType::PageBreak,
+            11 => LineType::MetadataKey,
+            12 => LineType::MetadataValue,
+            13 => LineType::Shot,
+            _ => LineType::Empty,
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30000))]
+
+        #[test]
+        fn prop_formatting_parser_never_panics(s in "\\PC*") {
+            let _fmt = parse_formatting(&s);
+        }
+
+        #[test]
+        fn prop_sigil_stripping_is_safe_for_utf8(s in "[^\n]*", lt in any_line_type()) {
+            let stripped = strip_sigils(&s, lt);
+            let left_chars = sigil_left_chars(&s, lt);
+
+            assert!(
+                s.ends_with(stripped) || s.contains(stripped),
+                "Stripped string must be a substring of the original"
+            );
+
+            assert!(
+                left_chars <= s.chars().count(),
+                "Sigil left chars exceeded total chars!"
+            );
+        }
+
+        #[test]
+        fn prop_layout_conserves_text_all_types(s in "[^\n]*", lt in any_line_type()) {
+            let config = Config::default();
+            let lines = vec![s.clone()];
+            let types = vec![lt];
+
+            let layout = build_layout(&lines, &types, 0, &config);
+
+            if !layout.is_empty() {
+                let reconstructed: String = layout
+                    .iter()
+                    .filter(|r| !r.is_phantom)
+                    .map(|r| r.raw_text.as_str())
+                    .collect();
+
+                assert_eq!(
+                    s, reconstructed,
+                    "Text conservation failed for type {:?}! Original vs Reconstructed differ.", lt
+                );
+            }
+        }
+
+        #[test]
+        fn prop_layout_width_never_exceeds_limit(s in "[^\n]*", lt in any_line_type()) {
+            let config = Config::default();
+            let lines = vec![s];
+            let types = vec![lt];
+            let layout = build_layout(&lines, &types, 0, &config);
+            let max_width = lt.fmt().width;
+
+            for row in layout.iter().filter(|r| !r.is_phantom) {
+                let plain = row.raw_text.replace("**", "").replace(['*', '_'], "");
+                let trimmed = plain.trim_end_matches(' ');
+                let w = UnicodeWidthStr::width(trimmed) as u16;
+
+                assert!(
+                    w <= max_width,
+                    "Row exceeded max width for type {:?}! Width: {}, Max: {}, Text: '{}'",
+                    lt, w, max_width, row.raw_text
+                );
+            }
+        }
+
+        #[test]
+        fn prop_char_boundaries_are_valid(s in "[^\n]*", lt in any_line_type()) {
+            let config = Config::default();
+            let lines = vec![s.clone()];
+            let types = vec![lt];
+            let layout = build_layout(&lines, &types, 0, &config);
+
+            let mut expected_start = 0;
+            let total_chars = s.chars().count();
+
+            for row in layout.iter().filter(|r| !r.is_phantom) {
+                assert_eq!(
+                    row.char_start, expected_start,
+                    "Gap or overlap detected in char_start"
+                );
+                assert!(
+                    row.char_end >= row.char_start,
+                    "char_end cannot be less than char_start"
+                );
+                assert!(
+                    row.char_end <= total_chars,
+                    "char_end exceeded total characters"
+                );
+
+                let row_char_count = row.raw_text.chars().count();
+                assert_eq!(
+                    row.char_end - row.char_start, row_char_count,
+                    "Mismatch between raw_text length and (char_end - char_start)"
+                );
+
+                expected_start = row.char_end;
+            }
+
+            if !layout.is_empty() {
+                assert_eq!(
+                    expected_start, total_chars,
+                    "Final char_end did not reach the end of the string"
+                );
+            }
+        }
+
+        #[test]
+        fn prop_cursor_roundtrip_never_panics(s in "[^\n]*", cursor_pos in 0usize..2000) {
+            let config = Config::default();
+            let lines = vec![s.clone()];
+            let types = vec![LineType::Action];
+            let layout = build_layout(&lines, &types, 0, &config);
+
+            let char_count = s.chars().count();
+            let safe_cursor = if char_count == 0 { 0 } else { cursor_pos % (char_count + 1) };
+
+            let (vi, visual_x) = find_visual_cursor(&layout, 0, safe_cursor);
+            if vi < layout.len() {
+                let row = &layout[vi];
+                let is_last = row.char_end == char_count;
+                let logical_back = row.visual_to_logical_x(visual_x, is_last);
+
+                assert!(
+                    logical_back <= char_count,
+                    "visual_to_logical_x returned an out-of-bounds index: {} > {}",
+                    logical_back, char_count
+                );
+
+                assert!(
+                    logical_back >= row.char_start,
+                    "Returned logical index is before the visual row start"
+                );
+            }
+        }
+
+        #[test]
+        fn prop_to_uppercase_1to1_invariant(s in ".*") {
+            use crate::formatting::StringCaseExt;
+            let upper = s.to_uppercase_1to1();
+
+            assert_eq!(
+                s.chars().count(),
+                upper.chars().count(),
+                "to_uppercase_1to1 MUST strictly preserve character count"
+            );
+        }
     }
 }

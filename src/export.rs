@@ -19,7 +19,7 @@ use ratatui::style::{Color, Modifier, Style};
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::Config;
-use crate::formatting::{RenderConfig, render_inline};
+use crate::formatting::{RenderConfig, StringCaseExt, render_inline};
 use crate::layout::{VisualRow, strip_sigils};
 use crate::types::{LineType, PAGE_WIDTH, base_style};
 
@@ -147,16 +147,16 @@ pub fn export_document(
             .to_string();
 
         if row.line_type == LineType::SceneHeading || row.line_type == LineType::Transition {
-            display = display.to_uppercase();
+            display = display.to_uppercase_1to1();
         } else if row.line_type == LineType::Character
             || row.line_type == LineType::DualDialogueCharacter
         {
             if let Some(idx) = display.find('(') {
-                let name = display[..idx].to_uppercase();
+                let name = display[..idx].to_uppercase_1to1();
                 let ext = &display[idx..];
                 display = format!("{}{}", name, ext);
             } else {
-                display = display.to_uppercase();
+                display = display.to_uppercase_1to1();
             }
         }
 
@@ -261,7 +261,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.8
+Draft date: Version 0.2.9
 Contact:
 contact@renecoignard.com
 

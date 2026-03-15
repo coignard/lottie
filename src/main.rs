@@ -27,7 +27,10 @@ use app::{App, draw};
 use clap::Parser;
 use config::Cli;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -91,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
             LeaveAlternateScreen,
             DisableMouseCapture,
+            PopKeyboardEnhancementFlags,
             crossterm::cursor::Show
         );
         println!();
@@ -101,7 +105,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    )?;
+
     let backend = CrosstermBackend::new(stdout);
     let mut term = Terminal::new(backend)?;
 
@@ -158,7 +169,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute!(
         term.backend_mut(),
         LeaveAlternateScreen,
-        DisableMouseCapture
+        DisableMouseCapture,
+        PopKeyboardEnhancementFlags
     )?;
     term.show_cursor()?;
     Ok(())
