@@ -463,7 +463,7 @@ pub fn build_layout(
                         let test_plain = test_str.replace("**", "").replace(['*', '_'], "");
                         let w = UnicodeWidthStr::width(test_plain.as_str()) as u16;
                         if w > space_left {
-                            if chars_to_take == 0 {
+                            if chars_to_take == 0 && current_line.is_empty() {
                                 chars_to_take = 1;
                             }
                             break;
@@ -1252,7 +1252,7 @@ mod property_tests {
     }
 
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(30000))]
+        #![proptest_config(ProptestConfig::with_cases(90000))]
 
         #[test]
         fn prop_formatting_parser_never_panics(s in "\\PC*") {
