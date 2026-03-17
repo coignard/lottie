@@ -42,6 +42,7 @@ jobs:
           bin: lottie
           target: ${{ matrix.target }}
           checksum: sha256
+          all-features: false
           token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/attest@v4
         with:
