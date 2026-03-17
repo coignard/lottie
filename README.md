@@ -8,7 +8,8 @@
 
 [![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
 [![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
-[![GitHub Release](https://img.shields.io/github/v/release/coignard/lottie)](https://github.com/coignard/lottie/releases/latest)
+[![Documentation](https://docs.rs/lottie-rs/badge.svg)](https://docs.rs/lottie-rs)
+[![Crates.io](https://img.shields.io/crates/v/lottie-rs.svg)](https://crates.io/crates/lottie-rs)
 [![License: GPL-3.0-or-later](http://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
 
@@ -31,6 +32,20 @@ git clone https://github.com/coignard/lottie
 cd lottie
 cargo build --release
 sudo cp target/release/lottie /usr/local/bin/
+```
+
+## Install as library
+
+Run the following Cargo command in your project directory:
+
+```bash
+cargo add lottie-rs
+```
+
+Or add the following line to your Cargo.toml:
+
+```toml
+lottie-rs = "0.2.10"
 ```
 
 ## Usage
@@ -159,6 +174,7 @@ A sample config is also included here in the repository.
 ## CLI options
 
 ```
+--config                     Path to a custom configuration file
 --hide-scene-numbers         Hide scene numbers
 --hide-page-numbers          Hide page numbers
 --show-markup                Show formatting markup
