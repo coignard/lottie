@@ -42,7 +42,7 @@ Run the following Cargo command in your project directory:
 cargo add lottie-rs
 ```
 
-Or add the following line to your Cargo.toml:
+Or add the following line to your `Cargo.toml`:
 
 ```toml
 lottie-rs = "0.2.10"
