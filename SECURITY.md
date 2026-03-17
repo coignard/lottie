@@ -9,6 +9,4 @@
 
 ## Reporting a Vulnerability
 
-Please [report vulnerabilities](https://github.com/coignard/lottie/security/advisories/new) rather than opening a public issue.
-
-You can expect an initial response within a few business days.
+Please [report vulnerabilities](https://github.com/coignard/lottie/security/advisories/new) rather than opening a public issue. Thanks!

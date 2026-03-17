@@ -8,10 +8,11 @@
 
 [![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
 [![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
+[![GitHub Release](https://img.shields.io/github/v/release/coignard/lottie)](https://github.com/coignard/lottie/releases/latest)
 [![License: GPL-3.0-or-later](http://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
 
-A simple yet powerful [Fountain](https://fountain.io/) screenplay editor. Fast, lightweight, and built for writers who live in the terminal. Lottie is a Rust port of [Beat](https://www.beat-app.fi/), built with [ratatui](https://github.com/ratatui/ratatui).
+A simple yet powerful [Fountain](https://github.com/nyousefi/Fountain) screenplay editor. Fast, lightweight, and built for writers who live in the terminal. Lottie is a Rust port of [Beat](https://github.com/lmparppei/beat), built with [ratatui](https://github.com/ratatui/ratatui).
 
 [![asciicast](https://asciinema.org/a/1jYgFFAeaettGJZa.svg)](https://asciinema.org/a/1jYgFFAeaettGJZa)
 

@@ -24,7 +24,30 @@ use ratatui::{
 
 use crate::types::get_marker_color;
 
+/// Extension trait that adds a character-count-preserving uppercase conversion
+/// to `str`.
+///
+/// The standard [`str::to_uppercase`] can expand certain characters (e.g. the
+/// German *Eszett* `ß` → `SS`), which breaks character-index arithmetic that
+/// the layout engine relies on.  [`StringCaseExt::to_uppercase_1to1`]
+/// guarantees a strict 1-to-1 character mapping by leaving any character that
+/// would expand unchanged.
 pub trait StringCaseExt {
+    /// Converts the string to uppercase whilst strictly preserving its character
+    /// count.
+    ///
+    /// Characters whose `to_uppercase` expansion produces more than one codepoint
+    /// (e.g. `ß`, typographic ligatures, certain Greek letters) are left as-is.
+    /// All other alphabetic characters are uppercased normally.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lottie_rs::formatting::StringCaseExt;
+    ///
+    /// assert_eq!("straße".to_uppercase_1to1(), "STRAßE");
+    /// assert_eq!("hello".to_uppercase_1to1(),  "HELLO");
+    /// ```
     fn to_uppercase_1to1(&self) -> String;
 }
 
@@ -40,17 +63,54 @@ impl StringCaseExt for str {
     }
 }
 
+/// Per-line inline formatting metadata produced by [`parse_formatting`].
+///
+/// Each field is a set of *global* character indices (relative to the start of
+/// the logical line, not the visual row) that carry a particular style.  The
+/// layout engine stores one `LineFormatting` per [`crate::layout::VisualRow`]
+/// so that [`render_inline`] can reconstruct the correct spans even
+/// after word-wrapping.
 #[derive(Default, Clone)]
 pub struct LineFormatting {
+    /// Indices of characters that should be rendered in **bold** (`**text**` or `***text***`).
     pub bold: HashSet<usize>,
+
+    /// Indices of characters that should be rendered in *italic* (`*text*` or `***text***`).
     pub italic: HashSet<usize>,
+
+    /// Indices of characters that should be rendered with an underline (`_text_`).
     pub underlined: HashSet<usize>,
+
+    /// Indices of characters that belong to an inline note (`[[text]]`).
     pub note: HashSet<usize>,
+
+    /// Indices of characters that belong to a boneyard comment (`/* text */`).
     pub boneyard: HashSet<usize>,
+
+    /// Per-character colour overrides parsed from the note body (e.g. `[[yellow note]]`).
+    ///
+    /// Only populated for indices that are also in [`note`](LineFormatting::note).
     pub note_color: HashMap<usize, Color>,
+
+    /// Indices of markup characters (asterisks, underscores, escape backslashes)
+    /// that are hidden from view when the cursor is not on the line.
     pub hidden_chars: HashSet<usize>,
 }
 
+/// Parses all inline Fountain/Markdown formatting from `text` and returns the
+/// resulting [`LineFormatting`] metadata.
+///
+/// Recognised markup:
+/// - `**text**` → bold
+/// - `*text*` → italic
+/// - `***text***` → bold + italic
+/// - `_text_` → underline
+/// - `[[text]]` → note (optionally coloured)
+/// - `/* text */` → boneyard
+/// - `\*` → escaped character (suppresses formatting)
+///
+/// The function operates entirely on character indices, so it is safe for
+/// arbitrary Unicode input including multi-byte sequences.
 pub fn parse_formatting(text: &str) -> LineFormatting {
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
@@ -162,17 +222,62 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
     fmt
 }
 
+/// Configuration for a single call to [`render_inline`].
+///
+/// This is a plain value type passed by copy; fields that default to `false`
+/// are safe to leave at `Default::default()` unless the caller needs to
+/// override them.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderConfig {
+    /// When `true`, markup characters (asterisks, underscores) are included in the
+    /// rendered output even for inactive lines
     pub reveal_markup: bool,
+
+    /// When `true`, all inline markdown processing is skipped and the text is
+    /// returned as a single unstyled span.  Used for boneyard lines.
     pub skip_markdown: bool,
+
+    /// When `true`, characters tagged as [`boneyard`](LineFormatting::boneyard) or
+    /// [`note`](LineFormatting::note) are omitted from the output entirely.
+    /// Used by the export path to strip editorial annotations from printed output.
     pub exclude_comments: bool,
+
+    /// The global character index of the first character in the `text` slice.
+    ///
+    /// Because `text` may be a word-wrapped *sub-string* of a longer logical line,
+    /// this offset is added to every local index before looking up formatting sets.
     pub char_offset: usize,
+
+    /// The global character index *after* the colon in a metadata key (e.g.
+    /// `Author: ` → 8).  Characters before this index are dimmed to visually
+    /// distinguish keys from values.  `0` disables the feature.
     pub meta_key_end: usize,
+
+    /// When `true`, all foreground/background colour styling is suppressed.
     pub no_color: bool,
+
+    /// When `true`, all bold/italic/underline modifier styling is suppressed.
     pub no_formatting: bool,
 }
 
+/// Renders `text` into a sequence of styled ratatui [`Span`]s, applying inline
+/// formatting, search highlights, and colour overrides.
+///
+/// Adjacent characters that share the same computed [`Style`] are coalesced
+/// into a single span to minimise allocations.  The function always returns at
+/// least one span (potentially empty) so callers can unconditionally index
+/// position `0`.
+///
+/// # Parameters
+///
+/// - `text` -- the display string for this visual row (possibly a sub-string
+///   after sigil stripping and case transformation).
+/// - `base` -- the base style for the line type, as produced by
+///   [`crate::types::base_style`].
+/// - `fmt` -- per-line formatting metadata from [`parse_formatting`].
+/// - `cfg` -- rendering options; see [`RenderConfig`].
+/// - `highlights` - global character indices that should be visually highlighted
+///   (e.g. search matches).
 pub fn render_inline(
     text: &str,
     base: Style,

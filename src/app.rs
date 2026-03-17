@@ -37,85 +37,214 @@ use crate::{
 };
 
 #[derive(Clone)]
+/// A snapshot of the document and cursor position for undo/redo.
 pub struct HistoryState {
+    /// The complete set of logical lines at the time the snapshot was taken.
     pub lines: Vec<String>,
+
+    /// Logical line index of the cursor at the time of the snapshot.
     pub cursor_y: usize,
+
+    /// Character offset within the cursor line at the time of the snapshot.
     pub cursor_x: usize,
 }
 
 #[derive(PartialEq, Clone, Default)]
+/// Categorises the most recent editing operation to decide whether to coalesce
+/// the next operation into the same undo entry.
 pub enum LastEdit {
     #[default]
+    /// No edit has been recorded yet, or the state was just restored from history.
     None,
+
+    /// The last operation was a character insertion.
     Insert,
+
+    /// The last operation was a deletion (backspace or forward-delete).
     Delete,
+
+    /// The last operation was a line-cut (`Ctrl-K`).
     Cut,
+
+    /// Any other operation (newline, tab, word deletion, etc.) that always starts
+    /// a fresh undo entry.
     Other,
 }
 
+/// The current input mode of the editor.
 #[derive(PartialEq, Debug)]
 pub enum AppMode {
+    /// Regular editing mode; keystrokes are interpreted as cursor movement or text
+    /// insertion.
     Normal,
+
+    /// The incremental search bar is active; keystrokes update the search query.
     Search,
+
+    /// The "save modified script?" confirmation prompt is displayed.
     PromptSave,
+
+    /// The "file name to write" input prompt is displayed.
     PromptFilename,
 }
 
+/// The complete persisted state of a single open document buffer.
+///
+/// When the user switches between open files, the current buffer's state is
+/// serialised into this struct and stored in [`App::buffers`], then the
+/// incoming buffer's `BufferState` is swapped into the live `App` fields.
 #[derive(Clone, Default)]
 pub struct BufferState {
+    /// The logical lines of the document.
     pub lines: Vec<String>,
+
+    /// The parsed [`LineType`] for each logical line.
     pub types: Vec<LineType>,
+
+    /// The most recently built visual layout.
     pub layout: Vec<VisualRow>,
+
+    /// The path to the file on disk, or `None` for unsaved buffers.
     pub file: Option<PathBuf>,
+
+    /// `true` when the buffer has unsaved changes.
     pub dirty: bool,
+
+    /// Logical line index of the cursor.
     pub cursor_y: usize,
+
+    /// Character offset within the cursor line.
     pub cursor_x: usize,
+
+    /// The visual column the cursor "wants" to be on when moving vertically.
+    ///
+    /// Preserved across up/down movements so that the cursor snaps back to its
+    /// original column when traversing a short line.
     pub target_visual_x: u16,
+
+    /// Index of the first visual row currently visible in the viewport.
     pub scroll: usize,
+
+    /// All unique character names seen in the document, used for auto-completion.
     pub characters: HashSet<String>,
+
+    /// All unique scene-heading location strings, used for auto-completion.
     pub locations: HashSet<String>,
+
+    /// History stack; the top entry is the state before the most recent edit.
     pub undo_stack: Vec<HistoryState>,
+
+    /// Redo stack; populated when an undo is performed.
     pub redo_stack: Vec<HistoryState>,
+
+    /// Classification of the most recent editing operation.
     pub last_edit: LastEdit,
 }
 
+/// The top-level application state, owning all open buffers and the active
+/// editing session.
+///
+/// `App` owns the *active* buffer's data directly (fields such as `lines`,
+/// `cursor_y`, etc.) for ergonomic access, and stores inactive buffers in
+/// [`buffers`](App::buffers).  Switching buffers is done via
+/// [`swap_buffer`](App::swap_buffer).
 pub struct App {
+    /// The active runtime configuration.
     pub config: Config,
 
+    /// All open buffers, including the currently active one (stored as a default
+    /// placeholder while the real data lives in the top-level fields).
     pub buffers: Vec<BufferState>,
+
+    /// Index into [`buffers`](App::buffers) of the currently active buffer.
     pub current_buf_idx: usize,
+
+    /// `true` if more than one file was opened at startup; used to show the
+    /// `[current/total]` indicator in the title bar even after buffers are closed.
     pub has_multiple_buffers: bool,
+
+    /// `true` when an `Esc` key-press was received but not yet paired with a
+    /// second keystroke.  Used to emulate Alt-key sequences on terminals that
+    /// send `Esc` + key instead of a single Alt escape.
     pub escape_pressed: bool,
 
+    /// Logical lines of the active document.
     pub lines: Vec<String>,
+
+    /// Parsed line types for the active document.
     pub types: Vec<LineType>,
+
+    /// Most recently built visual layout for the active document.
     pub layout: Vec<VisualRow>,
+
+    /// Path to the active buffer's file on disk.
     pub file: Option<PathBuf>,
+
+    /// `true` when the active buffer has unsaved changes.
     pub dirty: bool,
+
+    /// Logical line index of the cursor in the active buffer.
     pub cursor_y: usize,
+
+    /// Character offset within the cursor line.
     pub cursor_x: usize,
+
+    /// Visual column the cursor targets during vertical movement.
     pub target_visual_x: u16,
+
+    /// Height of the text viewport in rows; updated on every draw call.
     pub visible_height: usize,
+
+    /// First visual row index that is currently visible.
     pub scroll: usize,
 
+    /// All character names in the active document, for auto-completion.
     pub characters: HashSet<String>,
+
+    /// All scene-heading location strings in the active document, for auto-completion.
     pub locations: HashSet<String>,
+
+    /// The currently displayed auto-completion ghost text, if any.
     pub suggestion: Option<String>,
 
+    /// Undo history for the active buffer.
     pub undo_stack: Vec<HistoryState>,
+
+    /// Redo stack for the active buffer.
     pub redo_stack: Vec<HistoryState>,
+
+    /// Classification of the most recent edit, used for undo coalescing.
     pub last_edit: LastEdit,
 
+    /// Current input mode.
     pub mode: AppMode,
+
+    /// When `true`, the buffer will be closed (or the application will exit) once
+    /// the pending save prompt is resolved.
     pub exit_after_save: bool,
+
+    /// Accumulates keystrokes in [`PromptFilename`](AppMode::PromptFilename) mode.
     pub filename_input: String,
 
+    /// Transient status message shown in the status bar (e.g. "Wrote 69 lines").
     pub status_msg: Option<String>,
+
+    /// Clipboard for cut lines (`Ctrl-K` / `Ctrl-U`).  Multiple consecutive cuts
+    /// append to this buffer, separated by newlines.
     pub cut_buffer: Option<String>,
+
+    /// The search term being entered in [`Search`](AppMode::Search) mode.
     pub search_query: String,
+
+    /// The most recently executed search term; shown as the default in brackets
+    /// when the search bar is next opened.
     pub last_search: String,
 
+    /// When `true`, search matches are highlighted in the editor view.
     pub show_search_highlight: bool,
+
+    /// The compiled regex for the current search query; rebuilt via
+    /// [`update_search_regex`](App::update_search_regex) on every keystroke.
     pub compiled_search_regex: Option<regex::Regex>,
 }
 
@@ -129,6 +258,11 @@ impl Drop for App {
 }
 
 impl App {
+    /// Constructs a new `App` from command-line arguments.
+    ///
+    /// Loads the configuration, opens all files specified on the command line
+    /// (creating an empty buffer if none were given), parses every document, builds
+    /// the initial layouts, and positions the cursors.
     pub fn new(cli: Cli) -> Self {
         let config = Config::load(&cli);
 
@@ -244,6 +378,10 @@ impl App {
         app
     }
 
+    /// Atomically exchanges the live buffer fields with a [`BufferState`] struct.
+    ///
+    /// Used internally by [`switch_buffer`](App::switch_buffer) to persist the
+    /// outgoing buffer and restore the incoming one in a single step.
     pub fn swap_buffer(&mut self, other: &mut BufferState) {
         std::mem::swap(&mut self.lines, &mut other.lines);
         std::mem::swap(&mut self.types, &mut other.types);
@@ -261,6 +399,11 @@ impl App {
         std::mem::swap(&mut self.last_edit, &mut other.last_edit);
     }
 
+    /// Switches the active buffer to the one at `next_idx`.
+    ///
+    /// The current buffer's state is saved, the target buffer is loaded, and the
+    /// document is re-parsed and laid out.  A status message shows the filename
+    /// and line count of the newly active buffer.
     pub fn switch_buffer(&mut self, next_idx: usize) {
         if self.buffers.len() <= 1 || next_idx == self.current_buf_idx {
             return;
@@ -294,11 +437,13 @@ impl App {
         self.set_status(&format!("{} -- {} {}", file_name, line_count, line_word));
     }
 
+    /// Switches to the next buffer in the ring, wrapping around at the end.
     pub fn switch_next_buffer(&mut self) {
         let next = (self.current_buf_idx + 1) % self.buffers.len();
         self.switch_buffer(next);
     }
 
+    /// Switches to the previous buffer in the ring, wrapping around at the start.
     pub fn switch_prev_buffer(&mut self) {
         let prev = if self.current_buf_idx == 0 {
             self.buffers.len() - 1
@@ -308,6 +453,10 @@ impl App {
         self.switch_buffer(prev);
     }
 
+    /// Closes the currently active buffer and switches to an adjacent one.
+    ///
+    /// Returns `true` if this was the last buffer, indicating the application
+    /// should exit.
     pub fn close_current_buffer(&mut self) -> bool {
         if self.buffers.len() <= 1 {
             return true;
@@ -342,6 +491,11 @@ impl App {
         false
     }
 
+    /// Writes an emergency backup of every dirty buffer to disk.
+    ///
+    /// Called from the panic hook so that unsaved work is preserved if the
+    /// application crashes.  Backup files are named `<original>.save` (or
+    /// `<original>.save.<N>` if a backup already exists).
     #[allow(dead_code)]
     pub fn emergency_save(&mut self) {
         let mut to_save = Vec::new();
@@ -388,14 +542,21 @@ impl App {
         }
     }
 
+    /// Sets the transient status bar message.
     pub fn set_status(&mut self, msg: &str) {
         self.status_msg = Some(msg.to_string());
     }
 
+    /// Clears the status bar message.
     pub fn clear_status(&mut self) {
         self.status_msg = None;
     }
 
+    /// Recompiles the search regex from the current `search_query` (or
+    /// `last_search` if the query is empty).
+    ///
+    /// The regex is case-insensitive and the query is treated as a literal string
+    /// (special characters are escaped).
     pub fn update_search_regex(&mut self) {
         let active_query = if self.search_query.is_empty() {
             &self.last_search
@@ -413,6 +574,11 @@ impl App {
         }
     }
 
+    /// Computes and displays cursor position statistics in the status bar.
+    ///
+    /// The message format is:
+    /// `line L/TL (P%), col C/TC (P%), char CH/TCH (P%)`
+    /// where percentages are rounded to the nearest integer.
     pub fn report_cursor_position(&mut self) {
         if self.lines.is_empty() {
             self.set_status("line 1/1 (100%), col 1/1 (100%), char 1/1 (100%)");
@@ -463,6 +629,10 @@ impl App {
         self.set_status(&msg);
     }
 
+    /// Cuts the current logical line into the cut buffer (`Ctrl-K`).
+    ///
+    /// Consecutive cuts append to the existing cut buffer (separated by `\n`) so
+    /// that a block of lines can be cut and then pasted as a unit.
     pub fn cut_line(&mut self) {
         if self.last_edit != LastEdit::Cut {
             self.save_state(true);
@@ -494,6 +664,10 @@ impl App {
         }
     }
 
+    /// Pastes the cut buffer above the current line (`Ctrl-U`).
+    ///
+    /// All newline-separated lines in the cut buffer are inserted as individual
+    /// logical lines.
     pub fn paste_line(&mut self) {
         if let Some(cut_buf) = self.cut_buffer.clone() {
             self.save_state(true);
@@ -509,6 +683,11 @@ impl App {
         }
     }
 
+    /// Executes the current search query and advances the cursor to the next match.
+    ///
+    /// Searches forward from the current cursor position, wrapping around the end
+    /// of the document if necessary.  Sets a "Search Wrapped" status message when
+    /// wrapping occurs, or a "not found" message when no match exists.
     pub fn execute_search(&mut self) {
         if self.search_query.is_empty() {
             self.search_query = self.last_search.clone();
@@ -576,6 +755,11 @@ impl App {
         self.search_query.clear();
     }
 
+    /// Pushes the current document and cursor state onto the undo stack.
+    ///
+    /// When `force` is `false`, the state is only pushed if the document has
+    /// actually changed since the last snapshot.  Clears the redo stack.  The
+    /// stack is capped at 500 entries; older entries are dropped.
     pub fn save_state(&mut self, force: bool) {
         let state = HistoryState {
             lines: self.lines.clone(),
@@ -596,6 +780,9 @@ impl App {
         }
     }
 
+    /// Restores the previous state from the undo stack.
+    ///
+    /// Returns `true` if an undo was performed, `false` if the stack was empty.
     pub fn undo(&mut self) -> bool {
         if let Some(state) = self.undo_stack.pop() {
             self.redo_stack.push(HistoryState {
@@ -614,6 +801,9 @@ impl App {
         }
     }
 
+    /// Re-applies a previously undone edit from the redo stack.
+    ///
+    /// Returns `true` if a redo was performed, `false` if the stack was empty.
     pub fn redo(&mut self) -> bool {
         if let Some(state) = self.redo_stack.pop() {
             self.undo_stack.push(HistoryState {
@@ -632,6 +822,10 @@ impl App {
         }
     }
 
+    /// Re-parses the active document, rebuilding `types`, `characters`, and
+    /// `locations`.
+    ///
+    /// Must be called after any edit that may change line types.
     pub fn parse_document(&mut self) {
         self.types = Parser::parse(&self.lines);
         self.characters.clear();
@@ -653,25 +847,71 @@ impl App {
                 }
             } else if *t == LineType::SceneHeading {
                 let scene = self.lines[i].trim().to_uppercase_1to1();
-                if let Some(idx) = scene.find(' ') {
-                    let loc = scene[idx + 1..].trim().to_string();
-                    if !loc.is_empty() {
-                        self.locations.insert(loc);
+                let mut loc_str = scene.as_str();
+
+                if loc_str.starts_with('.') && !loc_str.starts_with("..") {
+                    loc_str = &loc_str[1..];
+                } else {
+                    let prefixes = [
+                        "INT. ",
+                        "EXT. ",
+                        "EST. ",
+                        "INT/EXT. ",
+                        "I/E. ",
+                        "E/I. ",
+                        "I./E. ",
+                        "E./I. ",
+                        "INT ",
+                        "EXT ",
+                        "EST ",
+                        "INT/EXT ",
+                        "I/E ",
+                        "E/I ",
+                    ];
+                    for p in prefixes {
+                        if let Some(rest) = loc_str.strip_prefix(p) {
+                            loc_str = rest;
+                            break;
+                        }
                     }
+                }
+
+                let mut final_loc = loc_str.trim().to_string();
+
+                if final_loc.ends_with('#')
+                    && let Some(idx) = final_loc.rfind(" #")
+                {
+                    final_loc.truncate(idx);
+                    final_loc = final_loc.trim().to_string();
+                }
+
+                if !final_loc.is_empty() {
+                    self.locations.insert(final_loc);
                 }
             }
         }
     }
 
+    /// Rebuilds the visual layout from the current `lines`, `types`, and
+    /// `cursor_y`.  Must be called after any edit or cursor movement that affects
+    /// the layout.
     pub fn update_layout(&mut self) {
         self.layout = build_layout(&self.lines, &self.types, self.cursor_y, &self.config);
     }
 
+    /// Returns the current visual column of the cursor, as it would appear on
+    /// screen.
     pub fn current_visual_x(&self) -> u16 {
         let (_, vis_x) = find_visual_cursor(&self.layout, self.cursor_y, self.cursor_x);
         vis_x
     }
 
+    /// Updates `suggestion` with the best auto-completion candidate for the
+    /// current cursor context.
+    ///
+    /// Completes character names when the cursor is on a character cue, and scene
+    /// heading locations when on a scene heading.  Clears the suggestion if no
+    /// suitable candidate exists or if auto-completion is disabled.
     pub fn update_autocomplete(&mut self) {
         self.suggestion = None;
         if !self.config.autocomplete {
@@ -714,14 +954,41 @@ impl App {
             }
         }
 
-        let trim_line = upper_line.trim_start();
-        let scene_prefixes = [
-            "INT. ", "EXT. ", "EST. ", "I/E. ", "E/I. ", "I./E. ", "E./I. ",
-        ];
-        for prefix in scene_prefixes {
-            if let Some(input) = trim_line.strip_prefix(prefix)
-                && !input.is_empty()
-            {
+        let is_scene_type = self.types.get(self.cursor_y) == Some(&LineType::SceneHeading);
+
+        if is_scene_type || upper_line.starts_with('.') {
+            let mut input = upper_line.trim_start();
+
+            if input.starts_with('.') && !input.starts_with("..") {
+                input = &input[1..];
+            } else {
+                let prefixes = [
+                    "INT. ",
+                    "EXT. ",
+                    "EST. ",
+                    "INT/EXT. ",
+                    "I/E. ",
+                    "E/I. ",
+                    "I./E. ",
+                    "E./I. ",
+                    "INT ",
+                    "EXT ",
+                    "EST ",
+                    "INT/EXT ",
+                    "I/E ",
+                    "E/I ",
+                ];
+                for p in prefixes {
+                    if let Some(rest) = input.strip_prefix(p) {
+                        input = rest;
+                        break;
+                    }
+                }
+            }
+
+            input = input.trim_start();
+
+            if !input.is_empty() {
                 let mut best_match: Option<&String> = None;
                 for loc in &self.locations {
                     if loc.starts_with(input)
@@ -733,12 +1000,15 @@ impl App {
                 }
                 if let Some(loc) = best_match {
                     self.suggestion = Some(loc[input.len()..].to_string());
-                    return;
                 }
             }
         }
     }
 
+    /// Saves the active buffer to its associated file path.
+    ///
+    /// Returns an error if the file path is not set or if the write fails.
+    /// Sets a status message with the number of lines written on success.
     pub fn save(&mut self) -> io::Result<()> {
         if let Some(ref p) = self.file {
             let mut content = self.lines.join("\n");
@@ -752,10 +1022,13 @@ impl App {
         Ok(())
     }
 
+    /// Returns the number of *characters* (not bytes) in logical line `y`.
     pub fn line_len(&self, y: usize) -> usize {
         self.lines.get(y).map(|l| l.chars().count()).unwrap_or(0)
     }
 
+    /// Moves the cursor up by one visual row, preserving the target horizontal
+    /// position where possible.
     pub fn move_up(&mut self) {
         self.last_edit = LastEdit::Other;
         let (vis_row, _) = find_visual_cursor(&self.layout, self.cursor_y, self.cursor_x);
@@ -764,18 +1037,15 @@ impl App {
             while target_vi > 0 && self.layout[target_vi].is_phantom {
                 target_vi -= 1;
             }
-            let target_row = &self.layout[target_vi];
-            let is_last = target_row.char_end == self.line_len(target_row.line_idx);
-            self.cursor_y = target_row.line_idx;
-            self.cursor_x = target_row
-                .visual_to_logical_x(self.target_visual_x, is_last)
-                .min(self.line_len(self.cursor_y));
+            self.jump_to_visual_row(target_vi, Some(false));
         } else {
             self.cursor_y = 0;
             self.cursor_x = 0;
         }
     }
 
+    /// Moves the cursor down by one visual row, preserving the target horizontal
+    /// position where possible.
     pub fn move_down(&mut self) {
         self.last_edit = LastEdit::Other;
         let (vis_row, _) = find_visual_cursor(&self.layout, self.cursor_y, self.cursor_x);
@@ -784,18 +1054,15 @@ impl App {
             while target_vi + 1 < self.layout.len() && self.layout[target_vi].is_phantom {
                 target_vi += 1;
             }
-            let target_row = &self.layout[target_vi];
-            let is_last = target_row.char_end == self.line_len(target_row.line_idx);
-            self.cursor_y = target_row.line_idx;
-            self.cursor_x = target_row
-                .visual_to_logical_x(self.target_visual_x, is_last)
-                .min(self.line_len(self.cursor_y));
+            self.jump_to_visual_row(target_vi, Some(true));
         } else {
             self.cursor_y = self.lines.len().saturating_sub(1);
             self.cursor_x = self.line_len(self.cursor_y);
         }
     }
 
+    /// Moves the cursor one character to the left, wrapping to the end of the
+    /// previous line at the start of a line.
     pub fn move_left(&mut self) {
         self.last_edit = LastEdit::Other;
         if self.cursor_x > 0 {
@@ -806,6 +1073,8 @@ impl App {
         }
     }
 
+    /// Moves the cursor one character to the right, wrapping to the start of the
+    /// next line at the end of a line.
     pub fn move_right(&mut self) {
         self.last_edit = LastEdit::Other;
         let max = self.line_len(self.cursor_y);
@@ -817,6 +1086,7 @@ impl App {
         }
     }
 
+    /// Moves the cursor to the start of the current or preceding word.
     pub fn move_word_left(&mut self) {
         self.last_edit = LastEdit::Other;
         if self.cursor_x == 0 {
@@ -832,6 +1102,7 @@ impl App {
         }
     }
 
+    /// Moves the cursor to the end of the current or next word.
     pub fn move_word_right(&mut self) {
         self.last_edit = LastEdit::Other;
         let chars: Vec<char> = self.lines[self.cursor_y].chars().collect();
@@ -848,30 +1119,105 @@ impl App {
         }
     }
 
+    /// Moves the cursor to the start of the current logical line.
     pub fn move_home(&mut self) {
         self.last_edit = LastEdit::Other;
         self.cursor_x = 0;
     }
 
+    /// Moves the cursor to the end of the current logical line.
     pub fn move_end(&mut self) {
         self.last_edit = LastEdit::Other;
         self.cursor_x = self.line_len(self.cursor_y);
     }
 
+    /// Moves the cursor up by one viewport height.
     pub fn move_page_up(&mut self) {
+        self.last_edit = LastEdit::Other;
         let height = self.visible_height.max(1);
-        for _ in 0..height {
-            self.move_up();
+        let (vis_row, _) = find_visual_cursor(&self.layout, self.cursor_y, self.cursor_x);
+        if vis_row > 0 {
+            let mut target_vi = vis_row.saturating_sub(height);
+            while target_vi > 0 && self.layout[target_vi].is_phantom {
+                target_vi -= 1;
+            }
+            self.jump_to_visual_row(target_vi, None);
+        } else {
+            self.cursor_y = 0;
+            self.cursor_x = 0;
         }
     }
 
+    /// Moves the cursor down by one viewport height.
     pub fn move_page_down(&mut self) {
+        self.last_edit = LastEdit::Other;
         let height = self.visible_height.max(1);
-        for _ in 0..height {
-            self.move_down();
+        let (vis_row, _) = find_visual_cursor(&self.layout, self.cursor_y, self.cursor_x);
+        if vis_row + 1 < self.layout.len() {
+            let mut target_vi = (vis_row + height).min(self.layout.len().saturating_sub(1));
+            while target_vi + 1 < self.layout.len() && self.layout[target_vi].is_phantom {
+                target_vi += 1;
+            }
+            self.jump_to_visual_row(target_vi, None);
+        } else {
+            self.cursor_y = self.lines.len().saturating_sub(1);
+            self.cursor_x = self.line_len(self.cursor_y);
         }
     }
 
+    fn jump_to_visual_row(&mut self, target_vi: usize, snap_edge: Option<bool>) {
+        let target_line_idx = self.layout[target_vi].line_idx;
+        let changed_line = self.cursor_y != target_line_idx;
+
+        let mut offset = 0;
+        for i in (0..target_vi).rev() {
+            if self.layout[i].line_idx == target_line_idx && !self.layout[i].is_phantom {
+                offset += 1;
+            } else if self.layout[i].line_idx != target_line_idx {
+                break;
+            }
+        }
+
+        self.cursor_y = target_line_idx;
+        let mut final_vi = target_vi;
+
+        if changed_line {
+            self.update_layout();
+
+            let new_rows: Vec<usize> = self
+                .layout
+                .iter()
+                .enumerate()
+                .filter(|(_, r)| !r.is_phantom && r.line_idx == target_line_idx)
+                .map(|(i, _)| i)
+                .collect();
+
+            if !new_rows.is_empty() {
+                if let Some(moving_down) = snap_edge {
+                    if moving_down {
+                        final_vi = *new_rows.first().unwrap();
+                    } else {
+                        final_vi = *new_rows.last().unwrap();
+                    }
+                } else {
+                    final_vi = new_rows[offset.min(new_rows.len().saturating_sub(1))];
+                }
+            }
+        }
+
+        if final_vi < self.layout.len() {
+            let target_row = &self.layout[final_vi];
+            let is_last = target_row.char_end == self.line_len(target_row.line_idx);
+            self.cursor_x = target_row
+                .visual_to_logical_x(self.target_visual_x, is_last)
+                .min(self.line_len(self.cursor_y));
+        }
+    }
+
+    /// Returns the UTF-8 byte offset of character index `cx` within logical line `y`.
+    ///
+    /// Returns the byte length of the line if `cx` is at or beyond the end,
+    /// which is the correct position for insertions at the end of a line.
     pub fn byte_of(&self, y: usize, cx: usize) -> usize {
         self.lines[y]
             .char_indices()
@@ -880,6 +1226,11 @@ impl App {
             .unwrap_or(self.lines[y].len())
     }
 
+    /// Inserts character `c` at the cursor position.
+    ///
+    /// Also inserts matching closing delimiters (`)`, `]]`, `*/`, `**`) when
+    /// the relevant auto-close options are enabled and the context is
+    /// appropriate.
     pub fn insert_char(&mut self, c: char) {
         if self.last_edit != LastEdit::Insert || c.is_whitespace() || ".,;?!()[]*".contains(c) {
             self.save_state(true);
@@ -908,6 +1259,16 @@ impl App {
         self.dirty = true;
     }
 
+    /// Inserts a newline at the current cursor position.
+    ///
+    /// When `is_shift` is `true`, the line is split literally (Shift-Enter)
+    /// without any smart behaviour.  Otherwise, context-sensitive logic applies:
+    ///
+    /// - On an empty or trailing-only character/dialogue/parenthetical cue, a
+    ///   single blank line is inserted and the cursor advances (smart escape from
+    ///   the dialogue block).
+    /// - For action, dialogue, scene headings, and similar elements,
+    ///   `auto_paragraph_breaks` inserts the required blank lines automatically.
     pub fn insert_newline(&mut self, is_shift: bool) {
         self.save_state(true);
         self.last_edit = LastEdit::Other;
@@ -988,6 +1349,15 @@ impl App {
         self.dirty = true;
     }
 
+    /// Handles a Tab key press.
+    ///
+    /// If a completion suggestion is active, Tab accepts it.  Otherwise, Tab
+    /// cycles the current line through the Fountain type state machine:
+    ///
+    /// `empty` → `@character` → `.scene` → `>transition` → `empty`
+    ///
+    /// Already-typed content with a recognised sigil is demoted by stripping the
+    /// sigil, and content without a sigil is promoted by prepending one.
     pub fn handle_tab(&mut self) {
         if let Some(sug) = self.suggestion.take() {
             self.save_state(true);
@@ -1104,6 +1474,12 @@ impl App {
         self.dirty = true;
     }
 
+    /// Deletes the character to the left of the cursor.
+    ///
+    /// Special cases:
+    /// - Deleting the opening character of a smart-paired delimiter (`()`, `[[]]`,
+    ///   `/**/`, `****`) removes both the opening and closing characters at once.
+    /// - At the start of a line, merges the current line with the preceding one.
     pub fn backspace(&mut self) {
         if self.last_edit != LastEdit::Delete {
             self.save_state(true);
@@ -1160,6 +1536,10 @@ impl App {
         }
     }
 
+    /// Deletes the character to the right of the cursor.
+    ///
+    /// Mirrors [`backspace`](App::backspace): handles smart-pair deletion and
+    /// merges with the following line when at the end.
     pub fn delete_forward(&mut self) {
         if self.last_edit != LastEdit::Delete {
             self.save_state(true);
@@ -1207,6 +1587,8 @@ impl App {
         }
     }
 
+    /// Deletes from the cursor backwards to the start of the current word,
+    /// consuming any leading whitespace first.
     pub fn delete_word_back(&mut self) {
         let max = self.line_len(self.cursor_y);
         if self.cursor_x > max {
@@ -1233,6 +1615,8 @@ impl App {
         self.dirty = true;
     }
 
+    /// Deletes from the cursor forwards to the end of the current word,
+    /// consuming any leading whitespace first.
     pub fn delete_word_forward(&mut self) {
         let max = self.line_len(self.cursor_y);
         if self.cursor_x > max {
@@ -1257,6 +1641,14 @@ impl App {
         self.dirty = true;
     }
 
+    /// Dispatches a single crossterm [`Event`] to the appropriate handler for the
+    /// current [`AppMode`].
+    ///
+    /// The three `*_changed` / `*_moved` output flags are set to `true` when the
+    /// corresponding categories of state have been mutated, so the caller can
+    /// batch multiple events before deciding what to redraw or reparse.
+    ///
+    /// Returns `Ok(true)` when the application should exit, `Ok(false)` otherwise.
     pub fn handle_event(
         &mut self,
         ev: Event,
@@ -1595,6 +1987,16 @@ impl App {
     }
 }
 
+/// Renders the complete TUI to the given ratatui [`Frame`].
+///
+/// Lays out the screen into four vertical sections:
+/// 1. **Title bar** -- file name, modification indicator, and buffer index.
+/// 2. **Text area** -- the screenplay content, centred around `PAGE_WIDTH`.
+/// 3. **Status bar** -- mode-specific prompts or transient messages.
+/// 4. **Shortcut bar** -- two rows of keyboard shortcut hints.
+///
+/// Also positions the terminal cursor at the correct screen cell so the
+/// terminal's own caret is visible.
 pub fn draw(f: &mut Frame, app: &mut App) {
     let area = f.area();
 
@@ -1986,7 +2388,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             f.set_cursor_position((cur_screen_x, status_area.y));
         }
         AppMode::PromptSave if status_area.height > 0 => {
-            let query_w = UnicodeWidthStr::width("Save modified buffer?");
+            let query_w = UnicodeWidthStr::width("Save modified script?");
             let cur_screen_x = (status_area.x + query_w as u16 + 1)
                 .min(status_area.x + status_area.width.saturating_sub(1));
             f.set_cursor_position((cur_screen_x, status_area.y));
@@ -3522,11 +3924,41 @@ mod app_tests {
     }
 
     #[test]
-    fn test_e2e_tutorial_integration() {
+    fn test_app_autocomplete_forced_scene_heading() {
+        let mut app = create_empty_app();
+        app.lines = vec![
+            ".KITCHEN - DAY".to_string(),
+            "".to_string(),
+            ".KIT".to_string(),
+        ];
+        app.cursor_y = 2;
+        app.cursor_x = 4;
+        app.parse_document();
+        app.update_autocomplete();
+        assert_eq!(app.suggestion, Some("CHEN - DAY".to_string()));
+    }
+
+    #[test]
+    fn test_app_autocomplete_scene_heading_without_dot() {
+        let mut app = create_empty_app();
+        app.lines = vec![
+            "INT BIG ROOM - DAY".to_string(),
+            "".to_string(),
+            "INT BI".to_string(),
+        ];
+        app.cursor_y = 2;
+        app.cursor_x = 6;
+        app.parse_document();
+        app.update_autocomplete();
+        assert_eq!(app.suggestion, Some("G ROOM - DAY".to_string()));
+    }
+
+    #[test]
+    fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.9
+Draft date: Version 0.2.10
 Contact:
 contact@renecoignard.com
 
@@ -3845,7 +4277,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         app.report_cursor_position();
         assert_eq!(
             app.status_msg.as_deref(),
-            Some("line 8/93 (8%), col 1/31 (3%), char 126/4074 (3%)")
+            Some("line 8/93 (8%), col 1/31 (3%), char 127/4075 (3%)")
         );
 
         app.cursor_y = app
@@ -3858,7 +4290,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         app.report_cursor_position();
         assert_eq!(
             app.status_msg.as_deref(),
-            Some("line 67/93 (72%), col 1/41 (2%), char 2969/4074 (72%)")
+            Some("line 67/93 (72%), col 1/41 (2%), char 2970/4075 (72%)")
         );
 
         app.cursor_y = app.lines.iter().position(|l| l == "> FADE OUT").unwrap();
@@ -3867,7 +4299,132 @@ And Beat itself, of course: https://www.beat-app.fi/
         app.report_cursor_position();
         assert_eq!(
             app.status_msg.as_deref(),
-            Some("line 93/93 (100%), col 11/11 (100%), char 4074/4074 (100%)")
+            Some("line 93/93 (100%), col 11/11 (100%), char 4075/4075 (100%)")
+        );
+
+        app.cursor_y = usize::MAX;
+        app.update_layout();
+
+        let render = crate::export::export_document(&app.layout, &app.lines, &app.config, false);
+
+        let reference_render = r#"                      Lottie Tutorial
+                      Credit: Written by
+                      Author: René Coignard
+                      Draft date: Version 0.2.10
+                      Contact:
+                        contact@renecoignard.com
+
+     1      INT. FLAT IN WOLFEN-NORD - DAY                                    1.
+
+            RENÉ sits at his desk, typing.
+
+                                RENÉ
+                            (turning round)
+                       Oh, hello there. It seems you've
+                       found my terminal Rust port of
+                       Beat. Sit back and I'll show you
+                       how everything works.
+
+            I sometimes write screenplays on my Gentoo laptop, and doing
+            it in plain nano isn't terribly comfortable (I work entirely
+            in the terminal there). So I decided to put this port of
+            Beat together. I used Beat's source code as a reference when
+            writing Lottie, so things work more or less the same way.
+
+            As you may have already noticed, the navigation is rather
+            reminiscent of nano, because I did look at its source code
+            and took inspiration, for the sake of authenticity. I'm
+            rather fond of it, and I hope you will be too. Not quite as
+            nerdy as vim, but honestly, I'm an average nano enjoyer and
+            I'm not ashamed of it.
+
+            Anyway, let's get into it.
+
+     2      EXT. NORDPARK - DAY
+
+            As I mentioned, things work much the same as in Beat. If you
+            start a line with int. or ext., Lottie will automatically
+            turn it into a scene heading. You can also use tab: on an
+            empty line, it will first turn it into a character cue, then
+            a scene heading, and then a transition. If you simply start
+            typing IN CAPS ON AN EMPTY LINE, LIKE SO, the text will
+            automatically become a character cue.
+
+            You can also use notes:
+
+                                SAILOR
+                       I'm not a sailor, actually.
+
+            Lottie automatically inserts two blank lines after certain
+            elements, just as Beat does, though this can be adjusted in
+            the configuration file. There's a sample config in the
+            repository; do make use of it. Bonus: try enabling
+            typewriter mode and see what happens.
+
+            To create a transition, simply write in capitals and end
+            with a colon, like so:
+
+                                                                 CUT TO:
+
+            That alone is quite enough to write a proper screenplay. But
+            there's more! For instance, we also have these:                   2.
+
+     3      INT. EDEKA - ABEND
+
+            Unlike Beat, there's no full render or PDF export here, but
+            you can always save your screenplay and open it in Beat to
+            do that. In Beat, synopses wouldn't appear in the rendered
+            script, nor would comments. Which is why they share the same
+            colour here, incidentally.
+
+            As you may have noticed, there's support for bold text,
+            italics, and even underlined text. When your cursor isn't on
+            a line containing these markers, they'll be hidden from
+            view. Move onto the line, and you'll see all the asterisks
+            and underscores that produce the formatting.
+
+            Centred text is supported as well, and works like this:
+
+                                    Centred text
+
+            You can also force transitions:
+
+                                 AN ABRUPT TRANSITION TO THE NEXT SCENE:
+
+     4      EXT. WOLFEN(BITTERFELD) RAILWAY STATION - MORNING
+
+            Lyrics are supported too, using a tilde at the start of the
+            line:
+
+                          Meine Damen, meine Herrn, danke
+                              Dass Sie mit uns reisen
+                              Zu abgefahrenen Preisen
+                              Auf abgefahrenen Gleisen
+                   Für Ihre Leidensfähigkeit, danken wir spontan
+                      Sänk ju for träweling wis Deutsche Bahn
+
+            That's Wise Guys. Onwards.
+
+     5      EXT. LEIPZIG HBF - MORNING
+
+            Well, do have a go on it, write something from scratch, or
+            edit this screenplay. You might even turn up a bug or two;
+            if so, please do let me know :-) Everything seemed to behave
+            itself while I was putting this tutorial together, and I
+            hope it all runs just as smoothly for you. I hope you enjoy
+            working in Lottie.
+
+            You can find more information about the Fountain markup
+            language at https://www.fountain.io/                              3.
+
+            And Beat itself, of course: https://www.beat-app.fi/
+
+                                                                FADE OUT
+"#;
+
+        assert_eq!(
+            render, reference_render,
+            "Reference render does not match expected output."
         );
     }
 }

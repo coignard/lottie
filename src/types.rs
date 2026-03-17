@@ -18,17 +18,40 @@
 use crate::config::Config;
 use ratatui::style::{Color, Modifier, Style};
 
+/// The usable text column width of a standard screenplay page, in characters.
+///
+/// All layout calculations treat this value as the right-hand margin for
+/// dialogue, action, transitions, and scene headings.
 pub const PAGE_WIDTH: u16 = 60;
+
+/// The number of printable lines assumed to fit on a single screenplay page.
+///
+/// Used by [`crate::layout::build_layout`] when deciding whether to advance
+/// the page counter and when to stamp a page number on the first non-empty
+/// row of a new page.
 pub const LINES_PER_PAGE: usize = 55;
 
+/// Formatting rules for a single [`LineType`] column.
+///
+/// Each variant of [`LineType`] owns one `Fmt` constant that describes where
+/// its text begins and how wide it may grow before being word-wrapped.
 #[derive(Clone, Copy)]
 pub struct Fmt {
+    /// Left indent in characters, measured from the left edge of the page column.
     pub indent: u16,
+
+    /// Maximum text width in characters before a soft word-wrap is triggered.
     pub width: u16,
+
+    /// Indent applied to continuation lines produced by word-wrapping.
+    ///
+    /// `None` means continuation lines use the same indent as the first line.
+    /// Currently only [`FMT_PAREN`] sets a different wrap indent.
     pub wrap_indent: Option<u16>,
 }
 
 impl Fmt {
+    /// Creates a `Fmt` with a uniform indent for all visual rows (no wrap-indent override).
     pub const fn new(indent: u16, width: u16) -> Self {
         Self {
             indent,
@@ -37,6 +60,10 @@ impl Fmt {
         }
     }
 
+    /// Creates a `Fmt` where continuation lines are indented differently from the first line.
+    ///
+    /// `wrap_indent` replaces `indent` on every row after the first within the same
+    /// logical line.
     pub const fn new_with_wrap(indent: u16, width: u16, wrap_indent: u16) -> Self {
         Self {
             indent,
@@ -46,45 +73,115 @@ impl Fmt {
     }
 }
 
+/// Layout rules for action/description blocks.
 pub const FMT_ACTION: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for scene headings (`INT. / EXT.` etc.).
 pub const FMT_SCENE: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for character cues.
 pub const FMT_CHARACTER: Fmt = Fmt::new(20, 38);
+
+/// Layout rules for dialogue text.
 pub const FMT_DIALOGUE: Fmt = Fmt::new(11, 35);
+
+/// Layout rules for parenthetical stage directions, with a distinct wrap indent.
 pub const FMT_PAREN: Fmt = Fmt::new_with_wrap(16, 28, 17);
+
+/// Layout rules for transitions (`CUT TO:`, `FADE OUT.` etc.).
 pub const FMT_TRANSITION: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for centred text (`>text<`).
 pub const FMT_CENTERED: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for lyric lines (`~text`).
 pub const FMT_LYRICS: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for section headings (`# text`).
 pub const FMT_SECTION: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for synopsis lines (`= text`).
 pub const FMT_SYNOPSIS: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for inline notes and boneyard blocks.
 pub const FMT_NOTE: Fmt = Fmt::new(0, 60);
+
+/// Layout rules for title-page metadata keys (e.g. `Author:`).
 pub const FMT_METADATA_KEY: Fmt = Fmt::new(10, 51);
+
+/// Layout rules for title-page metadata values (continuation lines).
 pub const FMT_METADATA_VAL: Fmt = Fmt::new(12, 49);
+
+/// Layout rules for the `Title:` metadata entry, which receives special rendering.
 pub const FMT_METADATA_TITLE: Fmt = Fmt::new(10, 51);
 
+/// The semantic classification of a single logical line in a Fountain document.
+///
+/// The parser assigns one variant to every line; downstream stages (layout,
+/// export, styling) branch on this value to decide indentation, colour, and
+/// whether the line is printed at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineType {
+    /// A blank line, used as a paragraph separator or to end dialogue blocks.
     Empty,
+
+    /// The `Title:` entry in the Fountain title-page header.
     MetadataTitle,
+
+    /// Any other key in the title-page metadata block (e.g. `Author:`, `Draft date:`).
     MetadataKey,
+
+    /// A continuation value line in the title-page metadata block.
     MetadataValue,
+
+    /// A scene heading (`INT.`, `EXT.`, `.FORCED`, etc.).
     SceneHeading,
+
+    /// An action/description paragraph.
     Action,
+
+    /// A character cue preceding dialogue.
     Character,
+
+    /// A character cue that participates in a dual-dialogue column (ends with `^`).
     DualDialogueCharacter,
+
+    /// A parenthetical stage direction inside a dialogue block.
     Parenthetical,
+
+    /// A dialogue line.
     Dialogue,
+
+    /// A transition (`CUT TO:`, `FADE OUT.`, `>FORCED TRANSITION`).
     Transition,
+
+    /// A centred line (`>text<`).
     Centered,
+
+    /// A lyric line (`~text`).
     Lyrics,
+
+    /// A section heading (`# text`), used for outline navigation.
     Section,
+
+    /// A synopsis line (`= text`), not rendered in export by default.
     Synopsis,
+
+    /// An inline editorial note (`[[text]]`).
     Note,
+
+    /// A commented-out block (`/* text */`) that is excluded from output.
     Boneyard,
+
+    /// An explicit page-break marker (`===`).
     PageBreak,
+
+    /// A shot line (`!! text` or `! text`).
     Shot,
 }
 
 impl LineType {
+    /// Returns the [`Fmt`] layout rules associated with this line type.
     pub fn fmt(self) -> Fmt {
         match self {
             Self::SceneHeading | Self::Shot => FMT_SCENE,
@@ -105,6 +202,11 @@ impl LineType {
     }
 }
 
+/// Computes the base ratatui [`Style`] for a given line type, respecting the
+/// `no_color` and `no_formatting` flags in `config`.
+///
+/// The returned style is the *default* appearance before any inline markdown
+/// spans or search highlights are applied on top.
 pub fn base_style(lt: LineType, config: &Config) -> Style {
     let mut style = match lt {
         LineType::SceneHeading => {
@@ -160,6 +262,14 @@ pub fn base_style(lt: LineType, config: &Config) -> Style {
     style
 }
 
+/// Parses a colour name out of a Fountain note or boneyard body and returns
+/// the corresponding ratatui [`Color`].
+///
+/// Recognised keywords: `red`, `blue`, `green`, `pink`/`magenta`,
+/// `cyan`/`teal`, `yellow`, `orange`/`brown`, `gray`.
+/// The prefix `marker` (without a specific colour word) maps to orange.
+///
+/// Returns `None` if no recognised colour keyword is present.
 pub fn get_marker_color(note_text: &str) -> Option<Color> {
     let lower = note_text.to_lowercase();
     if lower.contains("red") {

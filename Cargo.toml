@@ -1,12 +1,13 @@
 [package]
-name = "lottie"
-version = "0.2.9"
+name = "lottie-rs"
+version = "0.2.10"
 authors = [
     "René Coignard <contact@renecoignard.com>"
 ]
 edition = "2024"
+rust-version = "1.90"
 license = "GPL-3.0-or-later"
-description = "Rust port of Beat, a simple and elegant screenwriting app"
+description = "A simple yet powerful Fountain screenplay editor"
 homepage = "https://coignard.org/lottie"
 repository = "https://github.com/coignard/lottie"
 readme = "README.md"
@@ -26,6 +27,14 @@ directories = "6.0.0"
 
 [dev-dependencies]
 proptest = "1.10.0"
+
+[lib]
+name = "lottie_rs"
+path = "src/lib.rs"
+
+[[bin]]
+name = "lottie"
+path = "src/main.rs"
 
 [profile.release]
 strip = true

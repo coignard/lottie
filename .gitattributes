@@ -5,3 +5,5 @@
 *.yml text eol=lf
 .gitignore text eol=lf
 assets/logo.svg binary
+assets/logo-dark.svg binary
+assets/demo.gif binary

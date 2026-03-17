@@ -15,17 +15,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-mod app;
-mod config;
-mod export;
-mod formatting;
-mod layout;
-mod parser;
-mod types;
-
-use app::{App, draw};
 use clap::Parser;
-use config::Cli;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags,
@@ -36,6 +26,10 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{io, panic, time::Duration};
+
+use lottie_rs::app::{App, draw};
+use lottie_rs::config::Cli;
+use lottie_rs::export;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();

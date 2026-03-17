@@ -17,7 +17,7 @@
 
 use regex::Regex;
 use std::sync::LazyLock;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use unicode_width::UnicodeWidthChar;
 
 use crate::config::Config;
 use crate::formatting::{LineFormatting, parse_formatting};
@@ -26,23 +26,72 @@ use crate::types::{LINES_PER_PAGE, LineType, PAGE_WIDTH, get_marker_color};
 static SCENE_NUM_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(.*?)\s*(#[\w.\-)]+#)\s*$").unwrap());
 
+/// A single rendered row on screen, derived from one logical line of text.
+///
+/// Because Fountain lines can be longer than `PAGE_WIDTH`, one logical line
+/// may produce several consecutive `VisualRow`s that all share the same
+/// `line_idx`.  The [`char_start`](VisualRow::char_start) /
+/// [`char_end`](VisualRow::char_end) range identifies the slice of the original
+/// logical line that this row covers.
 #[derive(Clone)]
 pub struct VisualRow {
+    /// Index into the `lines` / `types` arrays of the logical line that produced
+    /// this row.
     pub line_idx: usize,
+
+    /// Character offset (inclusive) in the logical line where this visual row begins.
     pub char_start: usize,
+
+    /// Character offset (exclusive) in the logical line where this visual row ends.
     pub char_end: usize,
+
+    /// The text content of this visual row, after sigil stripping and (for
+    /// word-wrapped rows) splitting, but *before* case transformation.
     pub raw_text: String,
+
+    /// The semantic type of the originating logical line.
     pub line_type: LineType,
+
+    /// Left indent in columns, accounting for centring/right-alignment where
+    /// applicable.
     pub indent: u16,
+
+    /// `true` when the cursor's logical line matches this row's [`line_idx`](VisualRow::line_idx).
+    ///
+    /// Active rows show raw markup and suppress auto-CONT'D insertion.
     pub is_active: bool,
+
+    /// Scene number to display in the left margin, if scene numbering is enabled
+    /// and this is the first visual row of a scene heading.
     pub scene_num: Option<usize>,
+
+    /// Page number to display in the right margin, set on the *first* printable
+    /// non-empty row of each new page.
     pub page_num: Option<usize>,
+
+    /// An optional foreground colour override derived from an adjacent `[[marker]]`
+    /// note.  Supersedes the base style colour when present.
     pub override_color: Option<ratatui::style::Color>,
+
+    /// Inline formatting metadata (bold/italic/underline ranges) for the full
+    /// logical line, shared across all visual rows that originate from it.
     pub fmt: LineFormatting,
+
+    /// `true` for synthetic empty rows injected by smart heading spacing.
+    ///
+    /// Phantom rows contribute to the printable line count for page-break
+    /// calculations but are invisible in the rendered output.
     pub is_phantom: bool,
 }
 
 impl VisualRow {
+    /// Converts a *logical* cursor position (a character index in the full
+    /// logical line) into a *visual* column offset within this row.
+    ///
+    /// Hidden markup characters (asterisks, underscores) are excluded from the
+    /// visual width when the row is inactive and markup hiding is in effect.
+    /// Returns [`indent`](VisualRow::indent) if `logical_x` is before the start of
+    /// this row.
     pub fn logical_to_visual_x(&self, logical_x: usize) -> u16 {
         if logical_x <= self.char_start {
             return self.indent;
@@ -60,6 +109,12 @@ impl VisualRow {
         vis
     }
 
+    /// Converts a *visual* column offset within this row back to a *logical*
+    /// character index in the full logical line.
+    ///
+    /// `is_last_in_logical` must be `true` when this is the last visual row for
+    /// its logical line, so that the cursor may land *on* the final character
+    /// rather than being clamped one position short.
     pub fn visual_to_logical_x(&self, vis_x: u16, is_last_in_logical: bool) -> usize {
         if vis_x <= self.indent {
             return self.char_start;
@@ -90,6 +145,23 @@ impl VisualRow {
     }
 }
 
+/// Strips the Fountain sigil characters from the start (and sometimes end) of
+/// `raw`, returning the displayable portion of the line.
+///
+/// Sigils are syntax markers that force a particular line type but are not
+/// themselves part of the content (e.g. the leading `~` on a lyric line, or
+/// the leading `.` on a forced scene heading).  The returned slice is a
+/// sub-slice of `raw`; no allocation is performed.
+///
+/// # Examples
+///
+/// ```
+/// use lottie_rs::layout::strip_sigils;
+/// use lottie_rs::types::LineType;
+///
+/// assert_eq!(strip_sigils("~Song line", LineType::Lyrics), "Song line");
+/// assert_eq!(strip_sigils(">CENTER<",   LineType::Centered), "CENTER");
+/// ```
 pub fn strip_sigils(raw: &str, lt: LineType) -> &str {
     let trimmed = raw.trim_start();
     match lt {
@@ -118,6 +190,11 @@ pub fn strip_sigils(raw: &str, lt: LineType) -> &str {
     }
 }
 
+/// Returns the number of characters consumed by the sigil prefix of `raw` for
+/// the given `lt`.
+///
+/// This is used to calculate [`VisualRow::char_start`] so that cursor positions
+/// remain anchored to the logical line even after sigil stripping.
 pub fn sigil_left_chars(raw: &str, lt: LineType) -> usize {
     let stripped = strip_sigils(raw, lt);
     if stripped.as_ptr() >= raw.as_ptr() {
@@ -128,6 +205,11 @@ pub fn sigil_left_chars(raw: &str, lt: LineType) -> usize {
     }
 }
 
+/// Returns `true` if lines of `lt` contribute to the printable line count used
+/// for page-break and page-number calculations.
+///
+/// Non-printable types (metadata, boneyard, notes, page breaks) are excluded
+/// from the count so they do not affect pagination.
 pub fn is_printable(lt: LineType) -> bool {
     !matches!(
         lt,
@@ -162,22 +244,77 @@ fn tokenize_text(text: &str) -> Vec<String> {
     tokens
 }
 
-fn calculate_indent(lt: LineType, text: &str, base_indent: u16) -> u16 {
+fn is_pure_space(text: &str, is_active: bool, hide_markup: bool) -> bool {
+    text.chars()
+        .filter(|&c| {
+            if !is_active && hide_markup {
+                c != '*' && c != '_'
+            } else {
+                true
+            }
+        })
+        .all(|c| c.is_whitespace())
+}
+
+fn get_visual_width(text: &str, is_active: bool, hide_markup: bool, trim_end_spaces: bool) -> u16 {
+    let mut width = 0;
+    let mut trailing_spaces = 0;
+
+    for c in text.chars() {
+        if !is_active && hide_markup && (c == '*' || c == '_') {
+            continue;
+        }
+        let w = c.width().unwrap_or(0) as u16;
+        width += w;
+
+        if c.is_whitespace() {
+            trailing_spaces += w;
+        } else {
+            trailing_spaces = 0;
+        }
+    }
+
+    if trim_end_spaces && !is_pure_space(text, is_active, hide_markup) {
+        width.saturating_sub(trailing_spaces)
+    } else {
+        width
+    }
+}
+
+fn calculate_indent(
+    lt: LineType,
+    text: &str,
+    base_indent: u16,
+    is_active: bool,
+    hide_markup: bool,
+) -> u16 {
     match lt {
         LineType::Centered | LineType::Lyrics => {
-            let plain = text.replace("**", "").replace(['*', '_'], "");
-            let w = UnicodeWidthStr::width(plain.as_str()) as u16;
+            let w = get_visual_width(text, is_active, hide_markup, false);
             PAGE_WIDTH.saturating_sub(w) / 2
         }
         LineType::Transition => {
-            let plain = text.replace("**", "").replace(['*', '_'], "");
-            let w = UnicodeWidthStr::width(plain.as_str()) as u16;
+            let w = get_visual_width(text, is_active, hide_markup, false);
             PAGE_WIDTH.saturating_sub(w)
         }
         _ => base_indent,
     }
 }
 
+/// Converts a sequence of logical Fountain lines into a flat list of
+/// [`VisualRow`]s ready for terminal rendering or export.
+///
+/// The function handles:
+/// - Word-wrapping and hard-wrapping to `PAGE_WIDTH`.
+/// - Per-type indentation (including dynamic centring and right-alignment).
+/// - Smart heading spacing (phantom rows).
+/// - Page-break injection for `===` lines.
+/// - Scene and page numbering.
+/// - CONT'D auto-insertion for consecutive character cues.
+/// - Inline note annotation stripping for non-active scene/section lines.
+///
+/// `active_line` is the index of the logical line that currently holds the
+/// cursor; pass `usize::MAX` when rendering for export (no active line).
 pub fn build_layout(
     lines: &[String],
     types: &[LineType],
@@ -406,26 +543,26 @@ pub fn build_layout(
             let mut remaining_token = token;
 
             while !remaining_token.is_empty() {
-                let token_plain = remaining_token.replace("**", "").replace(['*', '_'], "");
-                let is_pure_space = token_plain.chars().all(|c| c.is_whitespace());
-
-                let token_w_trimmed = if is_pure_space {
-                    UnicodeWidthStr::width(token_plain.as_str()) as u16
-                } else {
-                    UnicodeWidthStr::width(token_plain.trim_end_matches(' ')) as u16
-                };
-
-                let cur_plain = current_line.replace("**", "").replace(['*', '_'], "");
-                let cur_w = UnicodeWidthStr::width(cur_plain.as_str()) as u16;
+                let token_w_trimmed =
+                    get_visual_width(&remaining_token, is_active, config.hide_markup, true);
+                let cur_w = get_visual_width(&current_line, is_active, config.hide_markup, false);
+                let token_is_pure_space =
+                    is_pure_space(&remaining_token, is_active, config.hide_markup);
 
                 if !current_line.is_empty()
-                    && !is_pure_space
+                    && !token_is_pure_space
                     && cur_w + token_w_trimmed > fmt_rules.width
                 {
                     let disp_char_len = current_line.chars().count();
                     let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
                     let raw_end = (raw_start + disp_char_len).min(total_original_chars);
-                    let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
+                    let current_indent = calculate_indent(
+                        lt,
+                        &current_line,
+                        fmt_rules.indent,
+                        is_active,
+                        config.hide_markup,
+                    );
 
                     logical_rows.push(VisualRow {
                         line_idx: i,
@@ -460,8 +597,8 @@ pub fn build_layout(
                     let t_chars: Vec<char> = remaining_token.chars().collect();
                     for (k, _) in t_chars.iter().enumerate() {
                         let test_str: String = t_chars[..=k].iter().collect();
-                        let test_plain = test_str.replace("**", "").replace(['*', '_'], "");
-                        let w = UnicodeWidthStr::width(test_plain.as_str()) as u16;
+                        let w = get_visual_width(&test_str, is_active, config.hide_markup, false);
+
                         if w > space_left {
                             if chars_to_take == 0 && current_line.is_empty() {
                                 chars_to_take = 1;
@@ -479,7 +616,13 @@ pub fn build_layout(
                     let disp_char_len = current_line.chars().count();
                     let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
                     let raw_end = (raw_start + disp_char_len).min(total_original_chars);
-                    let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
+                    let current_indent = calculate_indent(
+                        lt,
+                        &current_line,
+                        fmt_rules.indent,
+                        is_active,
+                        config.hide_markup,
+                    );
 
                     logical_rows.push(VisualRow {
                         line_idx: i,
@@ -515,7 +658,13 @@ pub fn build_layout(
         let disp_char_len = current_line.chars().count();
         let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
         let raw_end = (raw_start + disp_char_len).min(total_original_chars);
-        let current_indent = calculate_indent(lt, &current_line, fmt_rules.indent);
+        let current_indent = calculate_indent(
+            lt,
+            &current_line,
+            fmt_rules.indent,
+            is_active,
+            config.hide_markup,
+        );
 
         logical_rows.push(VisualRow {
             line_idx: i,
@@ -560,6 +709,13 @@ pub fn build_layout(
     rows
 }
 
+/// Locates the visual row and column that correspond to a logical cursor
+/// position `(cursor_y, cursor_x)`.
+///
+/// Returns `(visual_row_index, visual_column)`.  When the exact position falls
+/// between two visual rows (e.g. at a wrap boundary), the function prefers the
+/// row whose range includes `cursor_x`.  Falls back to the last visual row for
+/// the logical line if no better match is found.
 pub fn find_visual_cursor(layout: &[VisualRow], cursor_y: usize, cursor_x: usize) -> (usize, u16) {
     let mut last_for_line = None;
 
@@ -1223,13 +1379,34 @@ mod layout_tests {
             "Multiple spaces should not be collapsed"
         );
     }
+
+    #[test]
+    fn test_layout_active_line_with_markup_wraps_correctly() {
+        let config = Config::default();
+        let text = format!("**{}**", "a".repeat(60));
+        let lines = vec![text];
+        let types = vec![LineType::Action];
+
+        let layout_active = build_layout(&lines, &types, 0, &config);
+        assert_eq!(
+            layout_active.len(),
+            2,
+            "Active line should wrap because visible markup exceeds width"
+        );
+
+        let layout_inactive = build_layout(&lines, &types, 99, &config);
+        assert_eq!(
+            layout_inactive.len(),
+            1,
+            "Inactive line should not wrap when markup is hidden"
+        );
+    }
 }
 
 #[cfg(test)]
 mod property_tests {
     use super::*;
     use proptest::prelude::*;
-    use unicode_width::UnicodeWidthStr;
 
     fn any_line_type() -> impl Strategy<Value = LineType> {
         (0..15u8).prop_map(|idx| match idx {
@@ -1306,9 +1483,7 @@ mod property_tests {
             let max_width = lt.fmt().width;
 
             for row in layout.iter().filter(|r| !r.is_phantom) {
-                let plain = row.raw_text.replace("**", "").replace(['*', '_'], "");
-                let trimmed = plain.trim_end_matches(' ');
-                let w = UnicodeWidthStr::width(trimmed) as u16;
+                let w = get_visual_width(&row.raw_text, row.is_active, config.hide_markup, true);
 
                 assert!(
                     w <= max_width,

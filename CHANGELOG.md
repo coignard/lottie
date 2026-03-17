@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.10
+
+### Added
+
+- API documentation for all public items
+- Doc-tests for `StringCaseExt::to_uppercase_1to1`, `strip_sigils`, `Parser::is_transition_format`, and `Parser::is_uppercase_content`
+- `rust-version = "1.90"` in `Cargo.toml`
+
+### Fixed
+
+- Autocomplete now works for forced scene headings (`.HEADING`) and prefixes without a dot (`INT `, `INT/EXT.` etc.)
+- Visual width calculation now correctly respects `hide_markup` and active line state, fixing wrapping of lines with inline markup
+- Page navigation (`PageUp`/`PageDown`) now uses correct single-jump logic instead of repeated single-row moves
+
+### Changed
+
+- `main.rs` now imports from the `lottie` crate instead of local modules
+- Updated project description and README links
+
 ## 0.2.9
 
 ### Added
