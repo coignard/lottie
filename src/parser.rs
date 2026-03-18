@@ -369,6 +369,7 @@ impl Parser {
 
     fn is_character_cue(s: &str) -> bool {
         let stripped = s.trim_end_matches('^').trim();
+        // Hubert Blaine Wolfeschlegelsteinhausenbergerdorff fits (barely)
         if stripped.is_empty() || stripped.len() > 50 || stripped.ends_with('.') {
             return false;
         }

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.11
+
+### Added
+- Sponsors section in README
+
+### Fixed
+- Shot lines now render in uppercase in editor and export
+- Enhanced TTY support
+
+### Changed
+- Undo history limit increased to 640
+- Logo files corrected for light/dark theme
+- Repository URL updated to lottie.rs
+
 ## 0.2.10
 
 ### Added

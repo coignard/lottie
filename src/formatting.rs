@@ -125,6 +125,7 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
         }
     }
 
+    // stolen from tinder
     let mut find_pairs =
         |open: &str, close: &str, hide_markers: bool, apply: &mut dyn FnMut(usize, usize)| {
             let open_chars: Vec<char> = open.chars().collect();

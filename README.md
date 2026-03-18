@@ -1,7 +1,7 @@
 <p>
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo.svg?raw=true">
-    <source media="(prefers-color-scheme: light)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo-dark.svg?raw=true">
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo-dark.svg?raw=true">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo.svg?raw=true">
     <img src="assets/logo.svg" alt="Lottie Logo" height="38">
   </picture>
 </p>
@@ -208,9 +208,23 @@ A sample config is also included here in the repository.
 cargo test
 ```
 
+## Sponsors
+
+Hosting provided by <a href="https://cloud9.sh/">Cloud9</a>
+
+<a href="https://cloud9.sh/">
+  <p>
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo-dark.svg?raw=true">
+      <source media="(prefers-color-scheme: light)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true">
+      <img src="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true" alt="Cloud9 Logo" height="38">
+    </picture>
+  </p>
+</a>
+
 ## License
 
 © 2026 René Coignard.
 
-All code is licensed under the GPL, v3 or later. See [LICENSE](./LICENSE) file
+All code is licensed under the GPL, v3 or later. See [LICENSE](LICENSE) file
 for details.

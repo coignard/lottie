@@ -773,7 +773,8 @@ impl App {
                 .is_none_or(|last| last.lines != state.lines)
         {
             self.undo_stack.push(state);
-            if self.undo_stack.len() > 500 {
+            if self.undo_stack.len() > 640 {
+                // 640 ought to be enough for anybody ;-)
                 self.undo_stack.remove(0);
             }
             self.redo_stack.clear();
@@ -1009,6 +1010,8 @@ impl App {
     ///
     /// Returns an error if the file path is not set or if the write fails.
     /// Sets a status message with the number of lines written on success.
+    ///
+    /// For Charlotte.
     pub fn save(&mut self) -> io::Result<()> {
         if let Some(ref p) = self.file {
             let mut content = self.lines.join("\n");
@@ -1949,7 +1952,7 @@ impl App {
 
                         KeyCode::Enter => {
                             self.suggestion = None;
-                            self.insert_newline(shift);
+                            self.insert_newline(shift || alt);
                             *update_target_x = true;
                             *text_changed = true;
                             *cursor_moved = true;
@@ -2151,12 +2154,15 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     || row.raw_text.contains("*/");
                 let skip_md = row.line_type == LineType::Boneyard;
 
-                if row.line_type == LineType::SceneHeading || row.line_type == LineType::Transition
-                {
+                if matches!(
+                    row.line_type,
+                    LineType::SceneHeading | LineType::Transition | LineType::Shot
+                ) {
                     display = display.to_uppercase_1to1();
-                } else if row.line_type == LineType::Character
-                    || row.line_type == LineType::DualDialogueCharacter
-                {
+                } else if matches!(
+                    row.line_type,
+                    LineType::Character | LineType::DualDialogueCharacter
+                ) {
                     if let Some(idx) = display.find('(') {
                         let name = display[..idx].to_uppercase_1to1();
                         let ext = &display[idx..];
@@ -3958,7 +3964,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.10
+Draft date: Version 0.2.11
 Contact:
 contact@renecoignard.com
 
@@ -4310,7 +4316,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let reference_render = r#"                      Lottie Tutorial
                       Credit: Written by
                       Author: René Coignard
-                      Draft date: Version 0.2.10
+                      Draft date: Version 0.2.11
                       Contact:
                         contact@renecoignard.com
 
