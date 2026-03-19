@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.12
+
+### Added
+- Criterion benchmarks for parser and layout engine
+
+### Changed
+- `name = "lottie"` added to clap command for consistent `--version` output
+- Homepage and repository URLs updated in `Cargo.toml`
+- `TokenizeText` zero-allocation iterator replaces `tokenize_text` (vec-based)
+- `Rc<LineFormatting>` shared across visual rows of the same logical line instead of cloning
+- `is_scene_heading` avoids `to_uppercase()` allocation using `eq_ignore_ascii_case`
+- `find_pairs` in formatting parser takes `&[char]` instead of allocating `Vec<char>`
+- `build_layout`: 21.6ms → 12.6ms (+41.6%), `Parser::parse`: 2.55ms → 2.39ms (+6.1%) on 10,000 lines
+- Version bump to 0.2.12, closes #6
+
 ## 0.2.11
 
 ### Added

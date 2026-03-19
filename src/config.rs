@@ -124,7 +124,7 @@ unset force_ascii
 /// act as overrides on top of whatever the config file specifies.  See
 /// [`Config::load`] for the precedence order.
 #[derive(Parser, Debug, Default, Clone)]
-#[command(author, version, about, long_about = None)]
+#[command(name = "lottie", author, version, about, long_about = None)]
 pub struct Cli {
     /// The fountain file(s) to open
     #[arg(num_args = 0..)]

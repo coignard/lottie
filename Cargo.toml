@@ -1,6 +1,6 @@
 [package]
 name = "lottie-rs"
-version = "0.2.11"
+version = "0.2.12"
 authors = [
     "René Coignard <contact@renecoignard.com>"
 ]
@@ -8,8 +8,8 @@ edition = "2024"
 rust-version = "1.90"
 license = "GPL-3.0-or-later"
 description = "A simple yet powerful Fountain screenplay editor"
-homepage = "https://coignard.org/lottie"
-repository = "https://lottie.rs/"
+homepage = "https://lottie.rs/"
+repository = "https://github.com/coignard/lottie"
 readme = "README.md"
 keywords = ["fountain", "screenplay", "editor", "terminal", "tui"]
 categories = ["text-editors", "command-line-utilities"]
@@ -27,6 +27,11 @@ directories = "6.0.0"
 
 [dev-dependencies]
 proptest = "1.10.0"
+criterion = "0.8.2"
+
+[[bench]]
+name = "engine_bench"
+harness = false
 
 [lib]
 name = "lottie_rs"

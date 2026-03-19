@@ -301,11 +301,13 @@ impl Parser {
     }
 
     fn is_scene_heading(s: &str) -> bool {
-        let u = s.to_uppercase();
         let prefixes = ["INT", "EXT", "EST", "I/E", "E/I", "I./E", "E./I"];
 
         for p in prefixes {
-            if let Some(rest) = u.strip_prefix(p) {
+            if s.get(..p.len())
+                .is_some_and(|sub| sub.eq_ignore_ascii_case(p))
+            {
+                let rest = &s[p.len()..];
                 if rest.is_empty() {
                     return true;
                 }
@@ -318,13 +320,11 @@ impl Parser {
         }
 
         if Self::is_uppercase_content(s)
-            && let Some(dot_idx) = u.find(". ")
+            && let Some(dot_idx) = s.find(". ")
         {
-            let prefix = &u[..dot_idx];
-
+            let prefix = &s[..dot_idx];
             if !prefix.contains(' ') && !prefix.is_empty() {
-                let remainder = &u[dot_idx..];
-
+                let remainder = &s[dot_idx..];
                 if remainder.contains(" - ") || remainder.contains(" - ") {
                     return true;
                 }

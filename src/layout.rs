@@ -16,6 +16,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 use regex::Regex;
+use std::borrow::Cow;
+use std::rc::Rc;
 use std::sync::LazyLock;
 use unicode_width::UnicodeWidthChar;
 
@@ -75,7 +77,7 @@ pub struct VisualRow {
 
     /// Inline formatting metadata (bold/italic/underline ranges) for the full
     /// logical line, shared across all visual rows that originate from it.
-    pub fmt: LineFormatting,
+    pub fmt: Rc<LineFormatting>,
 
     /// `true` for synthetic empty rows injected by smart heading spacing.
     ///
@@ -222,28 +224,6 @@ pub fn is_printable(lt: LineType) -> bool {
     )
 }
 
-fn tokenize_text(text: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    let mut prev_was_sep = true;
-    for c in text.chars() {
-        let is_sep = c.is_whitespace() || c == '-';
-        current.push(c);
-        if is_sep && !prev_was_sep {
-            tokens.push(current);
-            current = String::new();
-        }
-        prev_was_sep = is_sep;
-    }
-    if !current.is_empty() {
-        tokens.push(current);
-    }
-    if tokens.is_empty() {
-        tokens.push(String::new());
-    }
-    tokens
-}
-
 fn is_pure_space(text: &str, is_active: bool, hide_markup: bool) -> bool {
     text.chars()
         .filter(|&c| {
@@ -301,6 +281,60 @@ fn calculate_indent(
     }
 }
 
+struct TokenizeText<'a> {
+    text: &'a str,
+    pos: usize,
+    prev_was_sep: bool,
+    done: bool,
+}
+
+impl<'a> TokenizeText<'a> {
+    fn new(text: &'a str) -> Self {
+        Self {
+            text,
+            pos: 0,
+            prev_was_sep: true,
+            done: false,
+        }
+    }
+}
+
+impl<'a> Iterator for TokenizeText<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        if self.text.is_empty() {
+            self.done = true;
+            return Some("");
+        }
+        if self.pos >= self.text.len() {
+            self.done = true;
+            return None;
+        }
+
+        let start = self.pos;
+        let mut current_pos = start;
+
+        for c in self.text[start..].chars() {
+            let is_sep = c.is_whitespace() || c == '-';
+            current_pos += c.len_utf8();
+
+            if is_sep && !self.prev_was_sep {
+                self.prev_was_sep = is_sep;
+                self.pos = current_pos;
+                return Some(&self.text[start..current_pos]);
+            }
+            self.prev_was_sep = is_sep;
+        }
+
+        self.pos = current_pos;
+        Some(&self.text[start..current_pos])
+    }
+}
+
 /// Converts a sequence of logical Fountain lines into a flat list of
 /// [`VisualRow`]s ready for terminal rendering or export.
 ///
@@ -333,10 +367,10 @@ pub fn build_layout(
     for (i, (line, &lt)) in lines.iter().zip(types.iter()).enumerate() {
         let is_active = i == active_line;
         let mut scene_num = None;
-        let mut raw_line = line.clone();
+        let mut raw_line = Cow::Borrowed(line.as_str());
         let mut line_override_color = None;
 
-        let format_data = parse_formatting(&raw_line);
+        let format_data = Rc::new(parse_formatting(&raw_line));
 
         if lt == LineType::Note {
             if let Some(start) = raw_line.find("[[") {
@@ -381,7 +415,7 @@ pub fn build_layout(
             if let Some(caps) = SCENE_NUM_RE.captures(&raw_line)
                 && !is_active
             {
-                raw_line = caps[1].to_string();
+                raw_line = Cow::Owned(caps[1].to_string());
             }
         }
 
@@ -411,7 +445,7 @@ pub fn build_layout(
                         scene_num: None,
                         page_num: None,
                         override_color: None,
-                        fmt: Default::default(),
+                        fmt: Rc::new(LineFormatting::default()),
                         is_phantom: true,
                     });
                     printable_row_count += 1;
@@ -425,7 +459,7 @@ pub fn build_layout(
 
         if lt == LineType::PageBreak {
             let display_text = if is_active {
-                raw_line.clone()
+                raw_line.to_string()
             } else {
                 let fill_char = if config.force_ascii { "-" } else { "─" };
                 fill_char.repeat(PAGE_WIDTH as usize)
@@ -442,7 +476,7 @@ pub fn build_layout(
                 scene_num: None,
                 page_num: None,
                 override_color: None,
-                fmt: format_data.clone(),
+                fmt: Rc::clone(&format_data),
                 is_phantom: false,
             });
             page_number += 1;
@@ -464,7 +498,7 @@ pub fn build_layout(
             }
         }
         let mut display = if is_active {
-            raw_line.clone()
+            raw_line.to_string()
         } else {
             strip_sigils(&raw_line, lt).to_string()
         };
@@ -536,7 +570,8 @@ pub fn build_layout(
         let total_original_chars = raw_line.chars().count();
         let mut row_disp_start: usize = 0;
         let mut current_line = String::new();
-        let tokens = tokenize_text(&final_display);
+        let mut cur_w = 0;
+        let tokens = TokenizeText::new(&final_display);
         let mut logical_rows = Vec::new();
 
         for token in tokens {
@@ -544,10 +579,9 @@ pub fn build_layout(
 
             while !remaining_token.is_empty() {
                 let token_w_trimmed =
-                    get_visual_width(&remaining_token, is_active, config.hide_markup, true);
-                let cur_w = get_visual_width(&current_line, is_active, config.hide_markup, false);
+                    get_visual_width(remaining_token, is_active, config.hide_markup, true);
                 let token_is_pure_space =
-                    is_pure_space(&remaining_token, is_active, config.hide_markup);
+                    is_pure_space(remaining_token, is_active, config.hide_markup);
 
                 if !current_line.is_empty()
                     && !token_is_pure_space
@@ -575,7 +609,7 @@ pub fn build_layout(
                         scene_num,
                         page_num: None,
                         override_color: line_override_color,
-                        fmt: format_data.clone(),
+                        fmt: Rc::clone(&format_data),
                         is_phantom: false,
                     });
 
@@ -585,6 +619,7 @@ pub fn build_layout(
 
                     row_disp_start += disp_char_len;
                     current_line.clear();
+                    cur_w = 0;
                     scene_num = None;
 
                     continue;
@@ -593,25 +628,30 @@ pub fn build_layout(
                 if cur_w + token_w_trimmed > fmt_rules.width {
                     let space_left = fmt_rules.width.saturating_sub(cur_w);
 
-                    let mut chars_to_take = 0;
-                    let t_chars: Vec<char> = remaining_token.chars().collect();
-                    for (k, _) in t_chars.iter().enumerate() {
-                        let test_str: String = t_chars[..=k].iter().collect();
-                        let w = get_visual_width(&test_str, is_active, config.hide_markup, false);
+                    let mut split_byte_idx = 0;
+                    let mut acc_w = 0;
 
-                        if w > space_left {
-                            if chars_to_take == 0 && current_line.is_empty() {
-                                chars_to_take = 1;
+                    for (k, (byte_idx, c)) in remaining_token.char_indices().enumerate() {
+                        let cw = if !is_active && config.hide_markup && (c == '*' || c == '_') {
+                            0
+                        } else {
+                            unicode_width::UnicodeWidthChar::width(c).unwrap_or(0) as u16
+                        };
+                        acc_w += cw;
+
+                        if acc_w > space_left {
+                            if k == 0 && current_line.is_empty() {
+                                split_byte_idx = byte_idx + c.len_utf8();
                             }
                             break;
                         }
-                        chars_to_take = k + 1;
+                        split_byte_idx = byte_idx + c.len_utf8();
                     }
 
-                    let part1: String = t_chars[..chars_to_take].iter().collect();
-                    let part2: String = t_chars[chars_to_take..].iter().collect();
+                    let part1 = &remaining_token[..split_byte_idx];
+                    let part2 = &remaining_token[split_byte_idx..];
 
-                    current_line.push_str(&part1);
+                    current_line.push_str(part1);
 
                     let disp_char_len = current_line.chars().count();
                     let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
@@ -635,7 +675,7 @@ pub fn build_layout(
                         scene_num,
                         page_num: None,
                         override_color: line_override_color,
-                        fmt: format_data.clone(),
+                        fmt: Rc::clone(&format_data),
                         is_phantom: false,
                     });
 
@@ -645,11 +685,14 @@ pub fn build_layout(
 
                     row_disp_start += disp_char_len;
                     current_line.clear();
+                    cur_w = 0;
                     scene_num = None;
 
                     remaining_token = part2;
                 } else {
-                    current_line.push_str(&remaining_token);
+                    current_line.push_str(remaining_token);
+                    cur_w +=
+                        get_visual_width(remaining_token, is_active, config.hide_markup, false);
                     break;
                 }
             }
@@ -677,7 +720,7 @@ pub fn build_layout(
             scene_num,
             page_num: None,
             override_color: line_override_color,
-            fmt: format_data.clone(),
+            fmt: Rc::clone(&format_data),
             is_phantom: false,
         });
 
@@ -966,7 +1009,7 @@ mod layout_tests {
             scene_num: None,
             page_num: None,
             override_color: None,
-            fmt: parse_formatting("Test **bold**"),
+            fmt: Rc::new(parse_formatting("Test **bold**")),
             is_phantom: false,
         };
         assert_eq!(row.logical_to_visual_x(0), 5);
@@ -987,7 +1030,7 @@ mod layout_tests {
             scene_num: None,
             page_num: None,
             override_color: None,
-            fmt: parse_formatting("Test **bold**"),
+            fmt: Rc::new(parse_formatting("Test **bold**")),
             is_phantom: false,
         };
         assert_eq!(row.visual_to_logical_x(5, true), 0);

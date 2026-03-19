@@ -47,3 +47,16 @@ jobs:
       - uses: actions/attest@v4
         with:
           subject-checksums: ${{ steps.upload.outputs.sha256 }}
+
+  update-homebrew:
+      needs: upload-assets
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v6
+        - name: Trigger tap update
+          run: |
+            gh workflow run update-formula.yml \
+              --repo coignard/homebrew-tap \
+              --field version=${{ github.ref_name }}
+          env:
+            GH_TOKEN: ${{ secrets.TAP_TOKEN }}

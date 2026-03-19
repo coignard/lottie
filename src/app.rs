@@ -3964,7 +3964,7 @@ mod app_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.11
+Draft date: Version 0.2.12
 Contact:
 contact@renecoignard.com
 
@@ -4316,7 +4316,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let reference_render = r#"                      Lottie Tutorial
                       Credit: Written by
                       Author: René Coignard
-                      Draft date: Version 0.2.11
+                      Draft date: Version 0.2.12
                       Contact:
                         contact@renecoignard.com
 

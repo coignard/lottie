@@ -127,9 +127,7 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
 
     // stolen from tinder
     let mut find_pairs =
-        |open: &str, close: &str, hide_markers: bool, apply: &mut dyn FnMut(usize, usize)| {
-            let open_chars: Vec<char> = open.chars().collect();
-            let close_chars: Vec<char> = close.chars().collect();
+        |open: &[char], close: &[char], hide_markers: bool, apply: &mut dyn FnMut(usize, usize)| {
             let mut i = 0;
             while i < len {
                 if skip.contains(&i) {
@@ -137,21 +135,21 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
                     continue;
                 }
                 let mut match_open = true;
-                for (k, &c) in open_chars.iter().enumerate() {
+                for (k, &c) in open.iter().enumerate() {
                     if i + k >= len || chars[i + k] != c || skip.contains(&(i + k)) {
                         match_open = false;
                         break;
                     }
                 }
                 if match_open {
-                    let mut j = i + open_chars.len();
+                    let mut j = i + open.len();
                     while j < len {
                         if skip.contains(&j) {
                             j += 1;
                             continue;
                         }
                         let mut match_close = true;
-                        for (k, &c) in close_chars.iter().enumerate() {
+                        for (k, &c) in close.iter().enumerate() {
                             if j + k >= len || chars[j + k] != c || skip.contains(&(j + k)) {
                                 match_close = false;
                                 break;
@@ -159,19 +157,19 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
                         }
                         if match_close {
                             apply(i, j);
-                            for k in 0..open_chars.len() {
+                            for k in 0..open.len() {
                                 skip.insert(i + k);
                                 if hide_markers {
                                     fmt.hidden_chars.insert(i + k);
                                 }
                             }
-                            for k in 0..close_chars.len() {
+                            for k in 0..close.len() {
                                 skip.insert(j + k);
                                 if hide_markers {
                                     fmt.hidden_chars.insert(j + k);
                                 }
                             }
-                            i = j + close_chars.len() - 1;
+                            i = j + close.len() - 1;
                             break;
                         }
                         j += 1;
@@ -181,13 +179,13 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
             }
         };
 
-    find_pairs("/*", "*/", false, &mut |start, end| {
+    find_pairs(&['/', '*'], &['*', '/'], false, &mut |start, end| {
         for i in start..(end + 2) {
             fmt.boneyard.insert(i);
         }
     });
 
-    find_pairs("[[", "]]", false, &mut |start, end| {
+    find_pairs(&['[', '['], &[']', ']'], false, &mut |start, end| {
         let content: String = chars[start + 2..end].iter().collect();
         let color = get_marker_color(&content);
         for i in start..(end + 2) {
@@ -198,23 +196,28 @@ pub fn parse_formatting(text: &str) -> LineFormatting {
         }
     });
 
-    find_pairs("***", "***", true, &mut |start, end| {
-        for i in (start + 3)..end {
-            fmt.bold.insert(i);
-            fmt.italic.insert(i);
-        }
-    });
-    find_pairs("**", "**", true, &mut |start, end| {
+    find_pairs(
+        &['*', '*', '*'],
+        &['*', '*', '*'],
+        true,
+        &mut |start, end| {
+            for i in (start + 3)..end {
+                fmt.bold.insert(i);
+                fmt.italic.insert(i);
+            }
+        },
+    );
+    find_pairs(&['*', '*'], &['*', '*'], true, &mut |start, end| {
         for i in (start + 2)..end {
             fmt.bold.insert(i);
         }
     });
-    find_pairs("*", "*", true, &mut |start, end| {
+    find_pairs(&['*'], &['*'], true, &mut |start, end| {
         for i in (start + 1)..end {
             fmt.italic.insert(i);
         }
     });
-    find_pairs("_", "_", true, &mut |start, end| {
+    find_pairs(&['_'], &['_'], true, &mut |start, end| {
         for i in (start + 1)..end {
             fmt.underlined.insert(i);
         }
