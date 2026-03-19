@@ -26,6 +26,12 @@ To download the source code, build the lottie binary, and install it in `$HOME/.
 cargo install --locked --git https://github.com/coignard/lottie
 ```
 
+Or install via Homebrew:
+
+```bash
+brew install coignard/tap/lottie
+```
+
 Alternatively, you can manually download the source code and build the lottie binary with:
 
 ```bash
