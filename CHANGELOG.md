@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.13
+
+### Added
+- Tab autocomplete for character names without `@` prefix: pressing Tab on an Action line now shows ghost text if a match exists, falling back to `@` if not
+- Accepting a suggestion via Tab now uppercases the typed prefix automatically
+
+### Fixed
+- Exit cleanup no longer clears the screen on non-Linux terminals; screen clear on exit is now limited to `TERM=linux`
+
+### Changed
+- `parse_formatting` returns early for lines without markup characters (fast path via byte scan)
+- `build_layout` skips `parse_formatting` entirely for lines without markup, reusing a shared empty `LineFormatting`
+- `is_pure_space` and `get_visual_width` merged into single-pass `token_metrics` returning trimmed width, total width, and purity flag
+- `current_line` buffer hoisted out of the per-line loop to avoid repeated allocations
+- `display` and `final_display` use `Cow<str>` to avoid cloning when no transformation is needed
+- Note-stripping for scene headings/sections/synopses now guarded by `display.contains("[[")` check
+- Scene number regex now pre-checked with `ends_with('#')` before invoking the regex engine
+- Version bump to 0.2.13
+
 ## 0.2.12
 
 ### Added

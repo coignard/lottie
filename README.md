@@ -52,7 +52,7 @@ cargo add lottie-rs
 Or add the following line to your `Cargo.toml`:
 
 ```toml
-lottie-rs = "0.2.12"
+lottie-rs = "0.2.13"
 ```
 
 ## Usage

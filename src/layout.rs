@@ -22,7 +22,7 @@ use std::sync::LazyLock;
 use unicode_width::UnicodeWidthChar;
 
 use crate::config::Config;
-use crate::formatting::{LineFormatting, parse_formatting};
+use crate::formatting::{LineFormatting, has_markup_bytes, parse_formatting};
 use crate::types::{LINES_PER_PAGE, LineType, PAGE_WIDTH, get_marker_color};
 
 static SCENE_NUM_RE: LazyLock<Regex> =
@@ -224,41 +224,32 @@ pub fn is_printable(lt: LineType) -> bool {
     )
 }
 
-fn is_pure_space(text: &str, is_active: bool, hide_markup: bool) -> bool {
-    text.chars()
-        .filter(|&c| {
-            if !is_active && hide_markup {
-                c != '*' && c != '_'
-            } else {
-                true
-            }
-        })
-        .all(|c| c.is_whitespace())
-}
-
-fn get_visual_width(text: &str, is_active: bool, hide_markup: bool, trim_end_spaces: bool) -> u16 {
+fn token_metrics(text: &str, is_active: bool, hide_markup: bool) -> (u16, u16, bool) {
     let mut width = 0;
     let mut trailing_spaces = 0;
+    let mut is_pure = true;
 
     for c in text.chars() {
         if !is_active && hide_markup && (c == '*' || c == '_') {
             continue;
         }
-        let w = c.width().unwrap_or(0) as u16;
+        let w = unicode_width::UnicodeWidthChar::width(c).unwrap_or(0) as u16;
         width += w;
 
         if c.is_whitespace() {
             trailing_spaces += w;
         } else {
             trailing_spaces = 0;
+            is_pure = false;
         }
     }
 
-    if trim_end_spaces && !is_pure_space(text, is_active, hide_markup) {
-        width.saturating_sub(trailing_spaces)
-    } else {
+    let trimmed_width = if is_pure {
         width
-    }
+    } else {
+        width.saturating_sub(trailing_spaces)
+    };
+    (trimmed_width, width, is_pure)
 }
 
 fn calculate_indent(
@@ -270,11 +261,11 @@ fn calculate_indent(
 ) -> u16 {
     match lt {
         LineType::Centered | LineType::Lyrics => {
-            let w = get_visual_width(text, is_active, hide_markup, false);
+            let w = token_metrics(text, is_active, hide_markup).1;
             PAGE_WIDTH.saturating_sub(w) / 2
         }
         LineType::Transition => {
-            let w = get_visual_width(text, is_active, hide_markup, false);
+            let w = token_metrics(text, is_active, hide_markup).1;
             PAGE_WIDTH.saturating_sub(w)
         }
         _ => base_indent,
@@ -361,16 +352,20 @@ pub fn build_layout(
     let mut printable_row_count = 0;
     let mut page_number = 1;
     let mut page_num_pending = true;
-
+    let mut current_line = String::with_capacity(PAGE_WIDTH as usize * 4);
     let mut active_note_color: Option<ratatui::style::Color> = None;
+    let empty_fmt = Rc::new(LineFormatting::default());
 
     for (i, (line, &lt)) in lines.iter().zip(types.iter()).enumerate() {
         let is_active = i == active_line;
         let mut scene_num = None;
         let mut raw_line = Cow::Borrowed(line.as_str());
         let mut line_override_color = None;
-
-        let format_data = Rc::new(parse_formatting(&raw_line));
+        let format_data = if !has_markup_bytes(&raw_line) {
+            empty_fmt.clone()
+        } else {
+            Rc::new(parse_formatting(&raw_line))
+        };
 
         if lt == LineType::Note {
             if let Some(start) = raw_line.find("[[") {
@@ -412,8 +407,10 @@ pub fn build_layout(
             if config.show_scene_numbers {
                 scene_num = Some(scene_counter);
             }
-            if let Some(caps) = SCENE_NUM_RE.captures(&raw_line)
-                && !is_active
+            if !is_active
+                && raw_line.trim_end().ends_with('#')
+                && raw_line.contains(" #")
+                && let Some(caps) = SCENE_NUM_RE.captures(&raw_line)
             {
                 raw_line = Cow::Owned(caps[1].to_string());
             }
@@ -497,10 +494,11 @@ pub fn build_layout(
                 _ => {}
             }
         }
+
         let mut display = if is_active {
-            raw_line.to_string()
+            Cow::Borrowed(raw_line.as_ref())
         } else {
-            strip_sigils(&raw_line, lt).to_string()
+            Cow::Borrowed(strip_sigils(&raw_line, lt))
         };
 
         if !is_active
@@ -508,8 +506,9 @@ pub fn build_layout(
                 lt,
                 LineType::SceneHeading | LineType::Section | LineType::Synopsis
             )
+            && display.contains("[[")
         {
-            let mut cleaned = String::new();
+            let mut cleaned = String::with_capacity(display.len());
             let mut in_note = false;
             let chars: Vec<char> = display.chars().collect();
             let mut j = 0;
@@ -529,7 +528,7 @@ pub fn build_layout(
                 }
                 j += 1;
             }
-            display = cleaned.trim_end().to_string();
+            display = Cow::Owned(cleaned.trim_end().to_string());
         }
 
         let mut final_display = display.clone();
@@ -548,7 +547,7 @@ pub fn build_layout(
                 && !is_active
                 && !clean_name.contains(&config.contd_extension)
             {
-                final_display = format!("{} {}", display, config.contd_extension);
+                final_display = Cow::Owned(format!("{} {}", display, config.contd_extension));
             }
             last_speaking_character = compare_name;
         } else if lt == LineType::Character || lt == LineType::DualDialogueCharacter {
@@ -566,30 +565,28 @@ pub fn build_layout(
         } else {
             sigil_left_chars(&raw_line, lt)
         };
-
         let total_original_chars = raw_line.chars().count();
         let mut row_disp_start: usize = 0;
-        let mut current_line = String::new();
         let mut cur_w = 0;
         let tokens = TokenizeText::new(&final_display);
         let mut logical_rows = Vec::new();
+
+        current_line.clear();
+        let mut current_line_char_count = 0;
 
         for token in tokens {
             let mut remaining_token = token;
 
             while !remaining_token.is_empty() {
-                let token_w_trimmed =
-                    get_visual_width(remaining_token, is_active, config.hide_markup, true);
-                let token_is_pure_space =
-                    is_pure_space(remaining_token, is_active, config.hide_markup);
+                let (token_w_trimmed, token_w_total, token_is_pure_space) =
+                    token_metrics(remaining_token, is_active, config.hide_markup);
 
                 if !current_line.is_empty()
                     && !token_is_pure_space
                     && cur_w + token_w_trimmed > fmt_rules.width
                 {
-                    let disp_char_len = current_line.chars().count();
                     let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
-                    let raw_end = (raw_start + disp_char_len).min(total_original_chars);
+                    let raw_end = (raw_start + current_line_char_count).min(total_original_chars);
                     let current_indent = calculate_indent(
                         lt,
                         &current_line,
@@ -617,17 +614,16 @@ pub fn build_layout(
                         fmt_rules.indent = wrap_indent;
                     }
 
-                    row_disp_start += disp_char_len;
+                    row_disp_start += current_line_char_count;
                     current_line.clear();
+                    current_line_char_count = 0;
                     cur_w = 0;
                     scene_num = None;
-
                     continue;
                 }
 
                 if cur_w + token_w_trimmed > fmt_rules.width {
                     let space_left = fmt_rules.width.saturating_sub(cur_w);
-
                     let mut split_byte_idx = 0;
                     let mut acc_w = 0;
 
@@ -652,10 +648,10 @@ pub fn build_layout(
                     let part2 = &remaining_token[split_byte_idx..];
 
                     current_line.push_str(part1);
+                    current_line_char_count += part1.chars().count();
 
-                    let disp_char_len = current_line.chars().count();
                     let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
-                    let raw_end = (raw_start + disp_char_len).min(total_original_chars);
+                    let raw_end = (raw_start + current_line_char_count).min(total_original_chars);
                     let current_indent = calculate_indent(
                         lt,
                         &current_line,
@@ -683,24 +679,23 @@ pub fn build_layout(
                         fmt_rules.indent = wrap_indent;
                     }
 
-                    row_disp_start += disp_char_len;
+                    row_disp_start += current_line_char_count;
                     current_line.clear();
+                    current_line_char_count = 0;
                     cur_w = 0;
                     scene_num = None;
-
                     remaining_token = part2;
                 } else {
                     current_line.push_str(remaining_token);
-                    cur_w +=
-                        get_visual_width(remaining_token, is_active, config.hide_markup, false);
+                    current_line_char_count += remaining_token.chars().count();
+                    cur_w += token_w_total;
                     break;
                 }
             }
         }
 
-        let disp_char_len = current_line.chars().count();
         let raw_start = (sigil_left + row_disp_start).min(total_original_chars);
-        let raw_end = (raw_start + disp_char_len).min(total_original_chars);
+        let raw_end = (raw_start + current_line_char_count).min(total_original_chars);
         let current_indent = calculate_indent(
             lt,
             &current_line,
@@ -713,7 +708,7 @@ pub fn build_layout(
             line_idx: i,
             char_start: raw_start,
             char_end: raw_end,
-            raw_text: current_line,
+            raw_text: current_line.clone(),
             line_type: lt,
             indent: current_indent,
             is_active,
@@ -1526,7 +1521,7 @@ mod property_tests {
             let max_width = lt.fmt().width;
 
             for row in layout.iter().filter(|r| !r.is_phantom) {
-                let w = get_visual_width(&row.raw_text, row.is_active, config.hide_markup, true);
+                let w = token_metrics(&row.raw_text, row.is_active, config.hide_markup).0;
 
                 assert!(
                     w <= max_width,

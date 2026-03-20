@@ -914,7 +914,8 @@ impl App {
     /// heading locations when on a scene heading.  Clears the suggestion if no
     /// suitable candidate exists or if auto-completion is disabled.
     pub fn update_autocomplete(&mut self) {
-        self.suggestion = None;
+        let pending_tab_suggestion = self.suggestion.take();
+
         if !self.config.autocomplete {
             return;
         }
@@ -930,24 +931,36 @@ impl App {
             return;
         }
 
+        let upper_line = line.to_uppercase_1to1();
+
+        if let Some(sug) = pending_tab_suggestion {
+            let upper_trim = upper_line.trim_start();
+            let full_text = format!("{}{}", upper_trim, sug);
+
+            if self.characters.contains(&full_text) || self.locations.contains(&full_text) {
+                self.suggestion = Some(sug);
+                if self.characters.contains(&full_text) {
+                    self.types[self.cursor_y] = LineType::Character;
+                } else if self.locations.contains(&full_text) {
+                    self.types[self.cursor_y] = LineType::SceneHeading;
+                }
+                return;
+            }
+        }
+
         let is_char_type = matches!(
             self.types.get(self.cursor_y),
             Some(LineType::Character) | Some(LineType::DualDialogueCharacter)
         );
-        let upper_line = line.to_uppercase_1to1();
 
         if is_char_type || upper_line.starts_with('@') {
             let input = upper_line.trim_start_matches('@').trim_start();
             if !input.is_empty() {
-                let mut best_match: Option<&String> = None;
-                for c in &self.characters {
-                    if c.starts_with(input)
-                        && c != input
-                        && (best_match.is_none() || c.len() < best_match.unwrap().len())
-                    {
-                        best_match = Some(c);
-                    }
-                }
+                let best_match = self
+                    .characters
+                    .iter()
+                    .filter(|c| c.starts_with(input) && c.len() > input.len())
+                    .min_by_key(|c| c.len());
                 if let Some(c) = best_match {
                     self.suggestion = Some(c[input.len()..].to_string());
                     return;
@@ -993,7 +1006,7 @@ impl App {
                 let mut best_match: Option<&String> = None;
                 for loc in &self.locations {
                     if loc.starts_with(input)
-                        && loc != input
+                        && loc.len() > input.len()
                         && (best_match.is_none() || loc.len() < best_match.unwrap().len())
                     {
                         best_match = Some(loc);
@@ -1365,6 +1378,7 @@ impl App {
         if let Some(sug) = self.suggestion.take() {
             self.save_state(true);
             self.last_edit = LastEdit::Other;
+            self.lines[self.cursor_y] = self.lines[self.cursor_y].to_uppercase_1to1();
             let b = self.byte_of(self.cursor_y, self.cursor_x);
             self.lines[self.cursor_y].insert_str(b, &sug);
             self.cursor_x += sug.chars().count();
@@ -1420,8 +1434,26 @@ impl App {
                 self.lines[self.cursor_y] = stripped.to_string();
                 self.cursor_x = self.cursor_x.saturating_sub(line.len() - stripped.len());
             } else if !line.starts_with('@') {
-                self.lines[self.cursor_y].insert(0, '@');
-                self.cursor_x += 1;
+                let upper_prefix = line.trim_start().to_uppercase_1to1();
+                let mut best_match: Option<&String> = None;
+
+                if !upper_prefix.is_empty() {
+                    for c in &self.characters {
+                        if c.starts_with(&upper_prefix)
+                            && c.len() > upper_prefix.len()
+                            && (best_match.is_none() || c.len() < best_match.unwrap().len())
+                        {
+                            best_match = Some(c);
+                        }
+                    }
+                }
+
+                if let Some(c) = best_match {
+                    self.suggestion = Some(c[upper_prefix.len()..].to_string());
+                } else {
+                    self.lines[self.cursor_y].insert(0, '@');
+                    self.cursor_x += 1;
+                }
             }
         } else if matches!(
             lt,
@@ -1931,12 +1963,10 @@ impl App {
                         }
                         KeyCode::PageUp => {
                             self.move_page_up();
-                            *update_target_x = true;
                             *cursor_moved = true;
                         }
                         KeyCode::PageDown => {
                             self.move_page_down();
-                            *update_target_x = true;
                             *cursor_moved = true;
                         }
                         KeyCode::Home => {
@@ -3960,11 +3990,269 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_tab_autocomplete_character_without_at_symbol() {
+        let mut app = create_empty_app();
+        app.characters.insert("CHARLOTTE".to_string());
+        app.characters.insert("RENÉ".to_string());
+
+        app.lines = vec!["C".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "C",
+            "Should NOT prepend '@' when a valid character match exists"
+        );
+        assert_eq!(app.suggestion.as_deref(), Some("HARLOTTE"));
+
+        app.update_autocomplete();
+
+        assert_eq!(
+            app.types[0],
+            LineType::Character,
+            "LineType must temporarily change to Character to center the text"
+        );
+        assert_eq!(
+            app.suggestion.as_deref(),
+            Some("HARLOTTE"),
+            "Suggestion must survive the update_autocomplete cycle"
+        );
+
+        app.handle_tab();
+
+        assert_eq!(app.lines[0], "CHARLOTTE");
+        assert_eq!(app.suggestion, None);
+        assert_eq!(app.cursor_x, 9);
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_fallback_to_at_symbol_for_unknown() {
+        let mut app = create_empty_app();
+        app.characters.insert("CHARLOTTE".to_string());
+        app.characters.insert("RENÉ".to_string());
+
+        app.lines = vec!["X".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "@X",
+            "Must fallback to prepending '@' because 'X' matches no characters"
+        );
+        assert_eq!(app.suggestion, None);
+        assert_eq!(app.cursor_x, 2);
+    }
+
+    #[test]
+    fn test_app_no_ghost_text_while_typing_action_line() {
+        let mut app = create_empty_app();
+        app.characters.insert("CHARLOTTE".to_string());
+        app.characters.insert("RENÉ".to_string());
+
+        app.lines = vec!["C".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.update_autocomplete();
+
+        assert_eq!(
+            app.suggestion, None,
+            "Typing on an Action line should NOT show ghost text unless Tab is pressed"
+        );
+        assert_eq!(
+            app.types[0],
+            LineType::Action,
+            "LineType must remain Action during normal typing"
+        );
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_fixes_case_on_accept() {
+        let mut app = create_empty_app();
+        app.characters.insert("RENÉ".to_string());
+
+        app.lines = vec!["re".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 2;
+
+        app.handle_tab();
+        app.update_autocomplete();
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "RENÉ",
+            "The existing lowercase prefix must be uppercased upon accepting the suggestion"
+        );
+    }
+
+    #[test]
+    fn test_app_tab_fallback_strip_sigils_restored() {
+        let mut app = create_empty_app();
+        app.lines = vec!["~I get a strange magic".to_string()];
+        app.types = vec![LineType::Empty];
+        app.cursor_y = 0;
+        app.cursor_x = 12;
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "I get a strange magic",
+            "The fallback block at the end of handle_tab must strip the '~' sigil"
+        );
+        assert_eq!(
+            app.cursor_x, 11,
+            "Cursor should shift left by 1 after stripping the sigil"
+        );
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_cancellation_reverts_magic() {
+        let mut app = create_empty_app();
+        app.characters.insert("CHARLOTTE".to_string());
+
+        app.lines = vec!["C".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.handle_tab();
+        app.update_autocomplete();
+
+        assert_eq!(
+            app.types[0],
+            LineType::Character,
+            "Sanity check: magic applied"
+        );
+        assert!(app.suggestion.is_some(), "Sanity check: suggestion exists");
+
+        app.insert_char('a');
+
+        app.parse_document();
+        app.update_autocomplete();
+
+        assert_eq!(
+            app.types[0],
+            LineType::Action,
+            "LineType must revert to Action after the user types a new lowercase character"
+        );
+        assert_eq!(
+            app.suggestion, None,
+            "Suggestion must be cleared when the user interrupts the autocomplete flow"
+        );
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_exact_match_prepends_at() {
+        let mut app = create_empty_app();
+        app.characters.insert("RENÉ".to_string());
+
+        app.lines = vec!["RENÉ".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 4;
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "@RENÉ",
+            "If the typed word exactly matches a character, Tab should force a character cue by prepending '@'"
+        );
+        assert_eq!(app.suggestion, None);
+        assert_eq!(app.cursor_x, 5);
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_interrupted_by_enter() {
+        let mut app = create_empty_app();
+        app.characters.insert("CHARLOTTE".to_string());
+
+        app.lines = vec!["C".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.handle_tab();
+        app.update_autocomplete();
+        assert_eq!(app.types[0], LineType::Character, "Magic is active");
+
+        app.suggestion = None;
+        app.insert_newline(false);
+        app.parse_document();
+        app.update_autocomplete();
+
+        assert_eq!(app.lines.len(), 2, "Newline should be inserted");
+        assert_eq!(
+            app.lines[0], "C",
+            "Original line must remain unchanged (no ghost text applied)"
+        );
+        assert_eq!(app.lines[1], "", "New line should be empty");
+        assert_eq!(
+            app.types[0],
+            LineType::Action,
+            "The magic LineType::Character MUST revert to Action because 'C' is not a valid cue"
+        );
+        assert_eq!(app.suggestion, None, "Suggestion must be destroyed");
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_cursor_in_middle_of_word() {
+        let mut app = create_empty_app();
+        app.characters.insert("RENÉ".to_string());
+
+        app.lines = vec!["Rblablabla".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 1;
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "@Rblablabla",
+            "Should prepend '@' because the entire trimmed line ('Rblablabla') does not match 'RENÉ'"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor should shift right by 1 due to the prepended '@'"
+        );
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_trailing_space() {
+        let mut app = create_empty_app();
+        app.characters.insert("CHARLOTTE".to_string());
+
+        app.lines = vec!["C ".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 2;
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[0], "@C ",
+            "Should safely fallback to prepending '@' when there is a trailing space"
+        );
+        assert_eq!(
+            app.suggestion, None,
+            "Suggestion must NOT be created for strings with trailing spaces"
+        );
+        assert_eq!(app.cursor_x, 3, "Cursor shifts by 1 because of '@'");
+    }
+
+    #[test]
     fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.12
+Draft date: Version 0.2.13
 Contact:
 contact@renecoignard.com
 
@@ -4316,7 +4604,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let reference_render = r#"                      Lottie Tutorial
                       Credit: Written by
                       Author: René Coignard
-                      Draft date: Version 0.2.12
+                      Draft date: Version 0.2.13
                       Contact:
                         contact@renecoignard.com
 

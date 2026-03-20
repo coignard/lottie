@@ -155,9 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    term.clear()?;
     let (_, rows) = crossterm::terminal::size().unwrap_or((0, 24));
-    execute!(term.backend_mut(), crossterm::cursor::MoveTo(0, rows))?;
 
     disable_raw_mode()?;
     execute!(
@@ -166,6 +164,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         DisableMouseCapture,
         PopKeyboardEnhancementFlags
     )?;
+
+    if std::env::var("TERM").unwrap_or_default() == "linux" {
+        execute!(
+            term.backend_mut(),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+            crossterm::cursor::MoveTo(0, rows)
+        )?;
+    }
+
     term.show_cursor()?;
     Ok(())
 }

@@ -63,6 +63,17 @@ impl StringCaseExt for str {
     }
 }
 
+/// Returns `true` if `text` contains any byte that could introduce inline
+/// Fountain/Markdown markup (`*`, `_`, `\`, `[`, `/`).
+///
+/// Used as a cheap pre-filter before running the full formatting parser.
+#[inline]
+pub fn has_markup_bytes(text: &str) -> bool {
+    text.as_bytes()
+        .iter()
+        .any(|&b| matches!(b, b'*' | b'_' | b'\\' | b'[' | b'/'))
+}
+
 /// Per-line inline formatting metadata produced by [`parse_formatting`].
 ///
 /// Each field is a set of *global* character indices (relative to the start of
@@ -112,6 +123,10 @@ pub struct LineFormatting {
 /// The function operates entirely on character indices, so it is safe for
 /// arbitrary Unicode input including multi-byte sequences.
 pub fn parse_formatting(text: &str) -> LineFormatting {
+    if !has_markup_bytes(text) {
+        return LineFormatting::default();
+    }
+
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
     let mut fmt = LineFormatting::default();
