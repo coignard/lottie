@@ -4374,6 +4374,219 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_close_last_buffer_triggers_exit() {
+        let mut app = create_empty_app();
+
+        assert_eq!(app.buffers.len(), 1);
+
+        let should_exit = app.close_current_buffer();
+        assert!(
+            should_exit,
+            "Closing the last buffer should return true on exit signal"
+        );
+    }
+
+    #[test]
+    fn test_app_close_middle_buffer() {
+        let mut app = create_empty_app();
+        app.buffers = vec![
+            BufferState {
+                lines: vec!["Buf 0".to_string()],
+                ..Default::default()
+            },
+            BufferState {
+                lines: vec!["Buf 1".to_string()],
+                ..Default::default()
+            },
+            BufferState {
+                lines: vec!["Buf 2".to_string()],
+                ..Default::default()
+            },
+        ];
+        app.current_buf_idx = 1;
+        app.has_multiple_buffers = true;
+
+        let should_exit = app.close_current_buffer();
+
+        assert!(!should_exit);
+        assert_eq!(app.buffers.len(), 2);
+        assert_eq!(app.current_buf_idx, 1);
+        assert_eq!(app.lines[0], "Buf 2");
+    }
+
+    #[test]
+    fn test_app_prompt_save_cancel_via_esc_and_ctrl_c() {
+        let mut app = create_empty_app();
+
+        app.mode = AppMode::PromptSave;
+        send_key_press(&mut app, KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(app.mode, AppMode::Normal);
+        assert_eq!(app.status_msg.as_deref(), Some("Cancelled"));
+
+        app.mode = AppMode::PromptSave;
+        send_key_press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert_eq!(app.mode, AppMode::Normal);
+        assert_eq!(app.status_msg.as_deref(), Some("Cancelled"));
+    }
+
+    #[test]
+    fn test_app_prompt_filename_empty_input_cancels() {
+        let mut app = create_empty_app();
+        app.mode = AppMode::PromptFilename;
+        app.filename_input = "   ".to_string();
+
+        send_key_press(&mut app, KeyCode::Enter, KeyModifiers::empty());
+
+        assert_eq!(app.mode, AppMode::Normal);
+        assert_eq!(app.status_msg.as_deref(), Some("Cancelled"));
+    }
+
+    #[test]
+    fn test_app_prompt_filename_save_error() {
+        let mut app = create_empty_app();
+        app.mode = AppMode::PromptFilename;
+        app.filename_input =
+            "/this/path/doesnt/exist/neither/does/the/meaning/of/life.fountain".to_string();
+
+        send_key_press(&mut app, KeyCode::Enter, KeyModifiers::empty());
+
+        assert_eq!(app.mode, AppMode::Normal);
+        assert!(
+            app.status_msg
+                .as_deref()
+                .unwrap_or("")
+                .starts_with("Error saving:"),
+            "An error saving message should appear"
+        );
+    }
+
+    #[test]
+    fn test_app_search_cancel_via_esc_and_ctrl_c() {
+        let mut app = create_empty_app();
+
+        app.mode = AppMode::Search;
+        app.search_query = "something".to_string();
+        app.show_search_highlight = true;
+
+        send_key_press(&mut app, KeyCode::Esc, KeyModifiers::empty());
+
+        assert_eq!(app.mode, AppMode::Normal);
+        assert!(!app.show_search_highlight);
+        assert!(app.search_query.is_empty(), "Query should be cleared");
+        assert_eq!(app.status_msg.as_deref(), Some("Cancelled"));
+    }
+
+    #[test]
+    fn test_app_search_backspace_to_empty_and_enter() {
+        let mut app = create_empty_app();
+        app.mode = AppMode::Search;
+        app.search_query = "a".to_string();
+
+        send_key_press(&mut app, KeyCode::Backspace, KeyModifiers::empty());
+        assert!(app.search_query.is_empty());
+
+        send_key_press(&mut app, KeyCode::Enter, KeyModifiers::empty());
+
+        assert_eq!(app.mode, AppMode::Normal);
+        assert_eq!(app.status_msg.as_deref(), Some("Cancelled"));
+    }
+
+    #[test]
+    fn test_app_shift_enter_literal_newline() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Action line.".to_string()];
+        app.types = vec![LineType::Action];
+        app.cursor_y = 0;
+        app.cursor_x = 6;
+        app.config.auto_paragraph_breaks = true;
+
+        app.insert_newline(true);
+
+        assert_eq!(
+            app.lines.len(),
+            2,
+            "Should be exactly 2 lines; auto-paragraphs are ignored with Shift"
+        );
+        assert_eq!(app.lines[0], "Action");
+        assert_eq!(app.lines[1], " line.");
+    }
+
+    #[test]
+    fn test_app_undo_stack_limit_truncation() {
+        let mut app = create_empty_app();
+        app.lines = vec!["".to_string()];
+
+        for _i in 0..650 {
+            app.insert_char('a');
+            app.save_state(true);
+        }
+
+        assert!(
+            app.undo_stack.len() <= 640,
+            "Undo stack should be truncated at 640 (...ought to be enough for anybody)"
+        );
+    }
+
+    #[test]
+    fn test_draw_metadata_key_dimming() {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut app = create_empty_app();
+        app.config.no_color = false;
+        app.lines = vec!["Author: René".to_string()];
+        app.types = vec![LineType::MetadataKey];
+        app.update_layout();
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|f| super::draw(f, &mut app)).unwrap();
+
+        let buffer = terminal.backend().buffer();
+        let mut found_gray_colon = false;
+
+        for y in 0..5 {
+            for x in 0..80 {
+                let cell = &buffer[(x, y)];
+                if cell.symbol() == ":" {
+                    assert_eq!(
+                        cell.fg,
+                        Color::DarkGray,
+                        "Metadata key should be rendered in gray"
+                    );
+                    found_gray_colon = true;
+                }
+            }
+        }
+        assert!(found_gray_colon, "Metadata colon not found on screen");
+    }
+
+    #[test]
+    fn test_handle_event_ctrl_x_closes_app() {
+        let mut app = create_empty_app();
+        app.dirty = false;
+
+        let mut update_x = false;
+        let mut text_ch = false;
+        let mut cur_moved = false;
+
+        use crossterm::event::{
+            Event, KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers,
+        };
+        let ev = Event::Key(KeyEvent {
+            code: KeyCode::Char('x'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+
+        let result = app
+            .handle_event(ev, &mut update_x, &mut text_ch, &mut cur_moved)
+            .unwrap();
+
+        assert!(result, "Ctrl+X should return true to exit the application");
+    }
+
+    #[test]
     fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by

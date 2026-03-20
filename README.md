@@ -9,7 +9,7 @@
 [![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
 [![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
 [![Documentation](https://docs.rs/lottie-rs/badge.svg)](https://docs.rs/lottie-rs)
-[![Crates.io Total Downloads](https://img.shields.io/crates/d/lottie-rs)](https://crates.io/crates/lottie-rs)
+[![Codecov](https://img.shields.io/codecov/c/gh/coignard/lottie)](https://app.codecov.io/github/coignard/lottie)
 [![Crates.io](https://img.shields.io/crates/v/lottie-rs.svg)](https://crates.io/crates/lottie-rs)
 [![License: GPL-3.0-or-later](https://img.shields.io/crates/l/lottie-rs.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
