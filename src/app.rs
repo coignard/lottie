@@ -4248,6 +4248,132 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_deduplicate_files() {
+        let mut cli = Cli::default();
+        cli.files = vec![
+            std::path::PathBuf::from("test.fountain"),
+            std::path::PathBuf::from("test.fountain"),
+        ];
+        let app = App::new(cli);
+        assert_eq!(app.buffers.len(), 1, "Duplicate files should be removed");
+    }
+
+    #[test]
+    fn test_app_emergency_save() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Test recovery data".to_string()];
+        app.dirty = true;
+
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("lottie_test_recovery.fountain");
+        app.file = Some(file_path.clone());
+
+        app.emergency_save();
+
+        let save_path = temp_dir.join("lottie_test_recovery.fountain.save");
+        assert!(save_path.exists());
+
+        let _ = std::fs::remove_file(save_path);
+    }
+
+    #[test]
+    fn test_app_save_command() {
+        let mut app = create_empty_app();
+        app.lines = vec!["Test save".to_string()];
+        app.dirty = true;
+
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join("lottie_test_save.fountain");
+        app.file = Some(file_path.clone());
+
+        assert!(app.save().is_ok());
+        assert!(!app.dirty);
+        assert!(file_path.exists());
+
+        let _ = std::fs::remove_file(file_path);
+    }
+
+    #[test]
+    fn test_app_mouse_scrolling() {
+        use crossterm::event::{Event, MouseEvent, MouseEventKind};
+        let mut app = create_empty_app();
+        app.lines = vec!["1".to_string(), "2".to_string()];
+        app.update_layout();
+
+        let mut t1 = false;
+        let mut t2 = false;
+        let mut t3 = false;
+
+        let scroll_down = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollDown,
+            column: 0,
+            row: 0,
+            modifiers: crossterm::event::KeyModifiers::empty(),
+        });
+        let _ = app
+            .handle_event(scroll_down, &mut t1, &mut t2, &mut t3)
+            .unwrap();
+        assert_eq!(app.cursor_y, 1);
+
+        let scroll_up = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::ScrollUp,
+            column: 0,
+            row: 0,
+            modifiers: crossterm::event::KeyModifiers::empty(),
+        });
+        let _ = app
+            .handle_event(scroll_up, &mut t1, &mut t2, &mut t3)
+            .unwrap();
+        assert_eq!(app.cursor_y, 0);
+    }
+
+    #[test]
+    fn test_app_prompt_save_logic() {
+        let mut app = create_empty_app();
+        app.mode = AppMode::PromptSave;
+
+        let temp_dir = std::env::temp_dir();
+        app.file = Some(temp_dir.join("dummy.fountain"));
+
+        send_key_press(&mut app, KeyCode::Char('y'), KeyModifiers::empty());
+        assert_eq!(app.mode, AppMode::Normal);
+
+        app.mode = AppMode::PromptSave;
+        app.exit_after_save = true;
+        let mut t1 = false;
+        let mut t2 = false;
+        let mut t3 = false;
+        use crossterm::event::{Event, KeyEvent, KeyEventKind, KeyEventState};
+        let ev = Event::Key(KeyEvent {
+            code: KeyCode::Char('n'),
+            modifiers: KeyModifiers::empty(),
+            kind: KeyEventKind::Press,
+            state: KeyEventState::empty(),
+        });
+        let result = app.handle_event(ev, &mut t1, &mut t2, &mut t3).unwrap();
+        assert!(
+            result,
+            "Should return true (exit) when 'n' pressed and exit_after_save is true"
+        );
+    }
+
+    #[test]
+    fn test_app_prompt_filename_logic() {
+        let mut app = create_empty_app();
+        app.mode = AppMode::PromptFilename;
+        app.filename_input = "i like trains".to_string();
+
+        send_key_press(&mut app, KeyCode::Char('!'), KeyModifiers::empty());
+        assert_eq!(app.filename_input, "i like trains!");
+
+        send_key_press(&mut app, KeyCode::Backspace, KeyModifiers::empty());
+        assert_eq!(app.filename_input, "i like trains");
+
+        send_key_press(&mut app, KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(app.mode, AppMode::Normal);
+    }
+
+    #[test]
     fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by

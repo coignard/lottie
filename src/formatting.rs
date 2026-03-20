@@ -765,4 +765,26 @@ mod formatting_tests {
 
         assert!(result.ends_with("SVOGEL"));
     }
+
+    #[test]
+    fn test_render_inline_exclude_comments() {
+        let fmt = parse_formatting("Action /* hidden */");
+        let mut cfg = RenderConfig::default();
+        cfg.exclude_comments = true;
+        let hl = HashSet::new();
+
+        let spans = render_inline("Action /* hidden */", Style::default(), &fmt, cfg, &hl);
+        let text: String = spans.iter().map(|s| s.content.as_ref()).collect();
+        assert_eq!(text, "Action ");
+    }
+
+    #[test]
+    fn test_render_inline_boneyard_color() {
+        let fmt = parse_formatting("/* boneyard */");
+        let cfg = RenderConfig::default();
+        let hl = HashSet::new();
+
+        let spans = render_inline("/* boneyard */", Style::default(), &fmt, cfg, &hl);
+        assert_eq!(spans[0].style.fg, Some(ratatui::style::Color::DarkGray));
+    }
 }

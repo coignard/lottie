@@ -465,4 +465,17 @@ mod types_tests {
         assert_eq!(style_char, Style::default());
         assert_eq!(style_lyrics, Style::default());
     }
+
+    #[test]
+    fn test_fmt_constructors() {
+        let fmt1 = Fmt::new(5, 50);
+        assert_eq!(fmt1.indent, 5);
+        assert_eq!(fmt1.width, 50);
+        assert_eq!(fmt1.wrap_indent, None);
+
+        let fmt2 = Fmt::new_with_wrap(5, 50, 10);
+        assert_eq!(fmt2.indent, 5);
+        assert_eq!(fmt2.width, 50);
+        assert_eq!(fmt2.wrap_indent, Some(10));
+    }
 }

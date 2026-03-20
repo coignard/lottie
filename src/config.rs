@@ -613,4 +613,30 @@ mod config_tests {
         );
         assert!(config.force_ansi);
     }
+
+    #[test]
+    fn test_config_load_cli_overrides_values() {
+        let mut cli = Cli::default();
+        cli.contd_extension = Some(" (ПРОД.)".to_string());
+        cli.heading_style = Some("underline".to_string());
+        cli.heading_spacing = Some(3);
+        cli.shot_style = Some("italic".to_string());
+
+        let config = Config::load(&cli);
+        assert_eq!(config.contd_extension, " (ПРОД.)");
+        assert_eq!(config.heading_style, "underline");
+        assert_eq!(config.heading_spacing, 3);
+        assert_eq!(config.shot_style, "italic");
+    }
+
+    #[test]
+    fn test_custom_config_file_error() {
+        let mut cli = Cli::default();
+        cli.config = Some(std::path::PathBuf::from(
+            "/this/path/doesnt/exist/neither/does/the/meaning/of/life.conf",
+        ));
+
+        let config = Config::load(&cli);
+        assert_eq!(config.heading_spacing, 1);
+    }
 }

@@ -1439,6 +1439,58 @@ mod layout_tests {
             "Inactive line should not wrap when markup is hidden"
         );
     }
+
+    #[test]
+    fn test_layout_phantom_lines_page_break_rollover() {
+        let config = Config {
+            heading_spacing: 10,
+            ..Config::default()
+        };
+        let mut lines = vec!["Action".to_string(); crate::types::LINES_PER_PAGE - 2];
+        let mut types = vec![LineType::Action; crate::types::LINES_PER_PAGE - 2];
+
+        lines.push("INT. ROOM".to_string());
+        types.push(LineType::SceneHeading);
+
+        let layout = build_layout(&lines, &types, 999, &config);
+        let phantoms: Vec<_> = layout.iter().filter(|r| r.is_phantom).collect();
+
+        assert!(phantoms.len() > 0);
+    }
+
+    #[test]
+    fn test_strip_sigils_inline_note_in_heading() {
+        let config = Config::default();
+        let lines = vec![".HEADING [[yellow note]]".to_string()];
+        let types = vec![LineType::SceneHeading];
+        let layout = build_layout(&lines, &types, 999, &config);
+
+        assert_eq!(layout[0].raw_text, "HEADING");
+        assert_eq!(
+            layout[0].override_color,
+            Some(ratatui::style::Color::Yellow)
+        );
+    }
+
+    #[test]
+    fn test_visual_to_logical_x_max_logical_break() {
+        let row = VisualRow {
+            line_idx: 0,
+            char_start: 0,
+            char_end: 2,
+            raw_text: "AB".to_string(),
+            line_type: LineType::Action,
+            indent: 0,
+            is_active: true,
+            scene_num: None,
+            page_num: None,
+            override_color: None,
+            fmt: Rc::new(LineFormatting::default()),
+            is_phantom: false,
+        };
+
+        assert_eq!(row.visual_to_logical_x(100, false), 1);
+    }
 }
 
 #[cfg(test)]

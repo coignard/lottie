@@ -124,8 +124,8 @@ pub fn export_document(
             continue;
         }
 
-        if row.line_type == LineType::Empty && row.page_num.is_none() {
-            if skipped_comment {
+        if (row.raw_text.is_empty() && row.scene_num.is_none()) && row.page_num.is_none() {
+            if row.line_type == LineType::Empty && skipped_comment {
                 skipped_comment = false;
                 continue;
             }
@@ -142,7 +142,7 @@ pub fn export_document(
             let s_str = format!("{}", snum);
             let s_len = s_str.len();
 
-            if global_pad >= s_len + gap_size {
+            if global_pad > s_len + gap_size {
                 let pad = global_pad - s_len - gap_size;
                 line_str.push_str(&" ".repeat(pad));
                 visual_width += pad;
@@ -293,6 +293,89 @@ mod export_tests {
             !exported.contains(&unexpected_line),
             "Exported document should NOT contain Unicode box drawing characters"
         );
+    }
+
+    #[test]
+    fn test_export_ansi_colors_and_empty_style() {
+        use crate::formatting::LineFormatting;
+        use crate::layout::VisualRow;
+        use ratatui::style::Color;
+        use std::rc::Rc;
+
+        let layout_empty = vec![VisualRow {
+            line_idx: 0,
+            char_start: 0,
+            char_end: 0,
+            raw_text: "".to_string(),
+            line_type: LineType::Action,
+            indent: 0,
+            is_active: false,
+            scene_num: None,
+            page_num: None,
+            override_color: None,
+            fmt: Rc::new(LineFormatting::default()),
+            is_phantom: false,
+        }];
+        let config = Config::default();
+        let exported = export_document(&layout_empty, &["".to_string()], &config, true);
+        assert_eq!(exported, "\n");
+
+        let colors = vec![
+            Color::Black,
+            Color::Red,
+            Color::Green,
+            Color::Yellow,
+            Color::Blue,
+            Color::Magenta,
+            Color::Cyan,
+            Color::Rgb(10, 20, 30),
+        ];
+
+        for color in colors {
+            let layout = vec![VisualRow {
+                line_idx: 0,
+                char_start: 0,
+                char_end: 4,
+                raw_text: "Test".to_string(),
+                line_type: LineType::Action,
+                indent: 0,
+                is_active: false,
+                scene_num: None,
+                page_num: None,
+                override_color: Some(color),
+                fmt: Rc::new(LineFormatting::default()),
+                is_phantom: false,
+            }];
+            let out = export_document(&layout, &["Test".to_string()], &config, true);
+            assert!(out.contains("\x1b[3"));
+        }
+    }
+
+    #[test]
+    fn test_export_edge_cases() {
+        let config = Config::default();
+        let lines = vec![
+            "INT. ROOM".to_string(),
+            "CHAR (V.O.)".to_string(),
+            "A very long line indeed".to_string(),
+        ];
+        let types = vec![
+            LineType::SceneHeading,
+            LineType::Character,
+            LineType::Action,
+        ];
+
+        let mut layout = crate::layout::build_layout(&lines, &types, usize::MAX, &config);
+
+        layout[0].scene_num = Some(999999);
+        layout[2].page_num = Some(69);
+        layout[2].indent = 100;
+
+        let exported = export_document(&layout, &lines, &config, false);
+
+        assert!(exported.contains("999999 INT. ROOM"));
+        assert!(exported.contains("CHAR (V.O.)"));
+        assert!(exported.contains("69."));
     }
 
     #[test]

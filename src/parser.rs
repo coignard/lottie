@@ -671,4 +671,31 @@ mod parser_tests {
         assert_eq!(types[1], LineType::Empty);
         assert_eq!(types[2], LineType::SceneHeading);
     }
+
+    #[test]
+    fn test_parser_metadata_leading_spaces() {
+        let lines = vec![
+            "Title: Script".to_string(),
+            "  Subtitle".to_string(),
+            "\tAuthor".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[0], LineType::MetadataTitle);
+        assert_eq!(types[1], LineType::MetadataValue);
+        assert_eq!(types[2], LineType::MetadataValue);
+    }
+
+    #[test]
+    fn test_parser_forced_dual_dialogue() {
+        let lines = vec!["".to_string(), "@CHAR^".to_string(), "＠CHAR2^".to_string()];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[1], LineType::DualDialogueCharacter);
+        assert_eq!(types[2], LineType::DualDialogueCharacter);
+    }
+
+    #[test]
+    fn test_parser_is_scene_heading_fast_return() {
+        assert!(Parser::is_scene_heading("INT"));
+        assert!(Parser::is_scene_heading("EXT"));
+    }
 }
