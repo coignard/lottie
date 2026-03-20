@@ -407,7 +407,7 @@ mod parser_tests {
             "  René Coignard,".to_string(),
             "  Charlotte C.".to_string(),
             "".to_string(),
-            "INT. RIONI RIVERBANK - EVENING".to_string(),
+            "EXT. RIONI RIVERBANK - EVENING".to_string(),
         ];
         let types = Parser::parse(&lines);
         assert_eq!(types[0], LineType::MetadataTitle);

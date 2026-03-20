@@ -2752,13 +2752,13 @@ mod app_tests {
     #[test]
     fn test_app_search_regex_not_found() {
         let mut app = create_empty_app();
-        app.lines = vec!["Just text".to_string()];
-        app.search_query = "unicorn".to_string();
+        app.lines = vec!["World".to_string()];
+        app.search_query = "god".to_string();
 
         app.execute_search();
 
         assert_eq!(app.cursor_y, 0, "Cursor should not move");
-        assert_eq!(app.status_msg.as_deref(), Some("\"unicorn\" not found"));
+        assert_eq!(app.status_msg.as_deref(), Some("\"god\" not found"));
         assert!(
             !app.show_search_highlight,
             "Highlight should be disabled if not found"
