@@ -36,6 +36,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+      - name: Update Rust
+        run: rustup update stable
       - uses: taiki-e/upload-rust-binary-action@v1
         id: upload
         with:
