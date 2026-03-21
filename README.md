@@ -1,10 +1,12 @@
-<p>
+<div align="center"><a href="https://lottie.rs/">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo-dark.svg?raw=true">
     <source media="(prefers-color-scheme: light)" srcset="https://github.com/coignard/lottie/blob/main/assets/logo.svg?raw=true">
-    <img src="assets/logo.svg" alt="Lottie Logo" height="38">
+    <img src="assets/logo.svg" alt="Lottie Logo" height="42">
   </picture>
-</p>
+</a>
+
+A simple yet powerful Fountain screenplay editor.
 
 [![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
 [![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
@@ -14,9 +16,8 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/crates/l/lottie-rs.svg)](LICENSE)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/coignard)
 
-A simple yet powerful [Fountain](https://github.com/nyousefi/Fountain) screenplay editor. Fast, lightweight, and built for writers who live in the terminal. Lottie is a Rust port of [Beat](https://github.com/lmparppei/beat), built with [ratatui](https://github.com/ratatui/ratatui).
-
 [![asciicast](https://asciinema.org/a/1jYgFFAeaettGJZa.svg)](https://asciinema.org/a/1jYgFFAeaettGJZa)
+</div>
 
 ## Install
 
@@ -215,23 +216,24 @@ A sample config is also included here in the repository.
 cargo test
 ```
 
+## Credits
+
+Lottie is a [Fountain](https://github.com/nyousefi/Fountain) screenplay editor, a port of [Beat](https://github.com/lmparppei/beat), built with [ratatui](https://github.com/ratatui/ratatui).
+
 ## Sponsors
 
 Hosting provided by <a href="https://cloud9.sh/">Cloud9</a>
 
 <a href="https://cloud9.sh/">
-  <p>
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo-dark.svg?raw=true">
-      <source media="(prefers-color-scheme: light)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true">
-      <img src="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true" alt="Cloud9 Logo" height="38">
-    </picture>
-  </p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo-dark.svg?raw=true">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true">
+    <img src="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true" alt="Cloud9 Logo" height="38">
+  </picture>
 </a>
 
 ## License
 
 © 2026 René Coignard.
 
-All code is licensed under the GPL, v3 or later. See [LICENSE](LICENSE) file
-for details.
+All code is licensed under the GPL, v3 or later. See [LICENSE](LICENSE) file for details.
