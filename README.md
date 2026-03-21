@@ -6,7 +6,7 @@
   </picture>
 </a>
 
-A simple yet powerful Fountain screenplay editor.
+A simple yet powerful Fountain screenplay editor
 
 [![CI](https://github.com/coignard/lottie/workflows/CI/badge.svg)](https://github.com/coignard/lottie/actions)
 [![CodeQL](https://github.com/coignard/lottie/workflows/CodeQL/badge.svg)](https://github.com/coignard/lottie/security/code-scanning)
