@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.14
+
+### Added
+- Explicit scene numbers: scenes can now be tagged with `#5#`, `#6A#`, `#B#` etc.; the counter syncs to numeric tags and continues from there
+- Tab autocomplete now correctly forces `@` prefix for character names ending with a dot (e.g. `R.C.`) and `.` prefix for locations not already prefixed
+
+### Fixed
+- Scene number display now uses Unicode-aware width calculation instead of byte length
+- Autocomplete suggestion acceptance no longer drops the sigil for names that require `@` or `.` to parse correctly
+
+### Changed
+- `scene_num` field type changed from `Option<usize>` to `Option<String>` to support alphanumeric scene numbers
+- Scene number regex replaced with `^(.*?)\s*#([^#]+)#\s*$` — anchored, simpler, no character class issues
+- `rust-version` bumped to `1.94`
+- Version bump to 0.2.14
+
 ## 0.2.13
 
 ### Added

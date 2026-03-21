@@ -542,26 +542,30 @@ mod config_tests {
     #[test]
     fn test_config_default_values() {
         let config = Config::default();
+
         assert!(config.show_scene_numbers);
         assert!(config.show_page_numbers);
         assert!(config.hide_markup);
+        assert!(!config.highlight_active_action);
+        assert!(!config.typewriter_mode);
+        assert!(!config.strict_typewriter_mode);
+        assert!(!config.focus_mode);
         assert!(config.autocomplete);
         assert!(config.auto_contd);
         assert!(config.auto_paragraph_breaks);
         assert!(config.match_parentheses);
         assert!(config.close_elements);
         assert!(!config.auto_title_page);
-        assert!(!config.typewriter_mode);
-        assert!(!config.focus_mode);
         assert!(config.break_actions);
-        assert!(!config.no_color);
-        assert!(!config.no_formatting);
-        assert!(!config.force_ascii);
-        assert!(!config.force_ansi);
+        assert!(!config.goto_end);
         assert_eq!(config.contd_extension, "(CONT'D)");
         assert_eq!(config.heading_style, "bold");
         assert_eq!(config.heading_spacing, 1);
         assert_eq!(config.shot_style, "bold");
+        assert!(!config.no_color);
+        assert!(!config.no_formatting);
+        assert!(!config.force_ascii);
+        assert!(!config.force_ansi);
     }
 
     #[test]
@@ -587,6 +591,34 @@ mod config_tests {
     }
 
     #[test]
+    fn test_config_parsing_behavior_flags() {
+        let mut config = Config::default();
+
+        let mock_file_content = "
+            set strict_typewriter_mode
+            set highlight_active_action
+            set goto_end
+            unset break_actions
+        ";
+
+        config.parse_config_str(mock_file_content);
+
+        assert!(
+            config.strict_typewriter_mode,
+            "strict_typewriter_mode should be set by parsing"
+        );
+        assert!(
+            config.highlight_active_action,
+            "highlight_active_action should be set by parsing"
+        );
+        assert!(config.goto_end, "goto_end should be set by parsing");
+        assert!(
+            !config.break_actions,
+            "break_actions should be unset by parsing"
+        );
+    }
+
+    #[test]
     fn test_cli_overrides_for_appearance() {
         let mut cli = Cli::default();
         cli.force_ascii = true;
@@ -598,6 +630,25 @@ mod config_tests {
         assert!(config.no_formatting);
         assert!(config.force_ascii);
         assert!(!config.force_ansi);
+    }
+
+    #[test]
+    fn test_cli_overrides_for_behavior_flags() {
+        let mut cli = Cli::default();
+        cli.strict_typewriter_mode = true;
+        cli.highlight_active_action = true;
+        cli.goto_end = true;
+        cli.no_break_actions = true;
+
+        let config = Config::load(&cli);
+
+        assert!(config.strict_typewriter_mode);
+        assert!(config.highlight_active_action);
+        assert!(config.goto_end);
+        assert!(
+            !config.break_actions,
+            "no_break_actions CLI flag should unset break_actions"
+        );
     }
 
     #[test]
@@ -638,5 +689,6 @@ mod config_tests {
 
         let config = Config::load(&cli);
         assert_eq!(config.heading_spacing, 1);
+        assert!(!config.strict_typewriter_mode);
     }
 }

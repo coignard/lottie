@@ -138,9 +138,9 @@ pub fn export_document(
         let mut line_str = String::new();
         let mut visual_width = 0usize;
 
-        if let Some(snum) = row.scene_num {
-            let s_str = format!("{}", snum);
-            let s_len = s_str.len();
+        if let Some(ref snum) = row.scene_num {
+            let s_str = snum.to_string();
+            let s_len = s_str.chars().count();
 
             if global_pad > s_len + gap_size {
                 let pad = global_pad - s_len - gap_size;
@@ -367,7 +367,7 @@ mod export_tests {
 
         let mut layout = crate::layout::build_layout(&lines, &types, usize::MAX, &config);
 
-        layout[0].scene_num = Some(999999);
+        layout[0].scene_num = Some("999999".to_string());
         layout[2].page_num = Some(69);
         layout[2].indent = 100;
 
@@ -383,7 +383,7 @@ mod export_tests {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.13
+Draft date: Version 0.2.14
 Contact:
 contact@renecoignard.com
 

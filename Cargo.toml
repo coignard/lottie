@@ -1,11 +1,11 @@
 [package]
 name = "lottie-rs"
-version = "0.2.13"
+version = "0.2.14"
 authors = [
     "René Coignard <contact@renecoignard.com>"
 ]
 edition = "2024"
-rust-version = "1.90"
+rust-version = "1.94"
 license = "GPL-3.0-or-later"
 description = "A simple yet powerful Fountain screenplay editor"
 homepage = "https://lottie.rs/"

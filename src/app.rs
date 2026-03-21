@@ -1378,10 +1378,41 @@ impl App {
         if let Some(sug) = self.suggestion.take() {
             self.save_state(true);
             self.last_edit = LastEdit::Other;
+
             self.lines[self.cursor_y] = self.lines[self.cursor_y].to_uppercase_1to1();
+
             let b = self.byte_of(self.cursor_y, self.cursor_x);
             self.lines[self.cursor_y].insert_str(b, &sug);
             self.cursor_x += sug.chars().count();
+
+            self.parse_document();
+            let parsed_type = self.types[self.cursor_y];
+
+            let line = self.lines[self.cursor_y].clone();
+            let clean_line = crate::layout::strip_sigils(&line, parsed_type)
+                .trim()
+                .to_string();
+
+            let is_char = self.characters.contains(&clean_line);
+            let is_loc = self.locations.contains(&clean_line);
+
+            if is_char
+                && parsed_type != LineType::Character
+                && parsed_type != LineType::DualDialogueCharacter
+            {
+                if !self.lines[self.cursor_y].starts_with('@') {
+                    self.lines[self.cursor_y].insert(0, '@');
+                    self.cursor_x += 1;
+                }
+            } else if is_loc
+                && !is_char
+                && parsed_type != LineType::SceneHeading
+                && !self.lines[self.cursor_y].starts_with('.')
+            {
+                self.lines[self.cursor_y].insert(0, '.');
+                self.cursor_x += 1;
+            }
+
             self.dirty = true;
             return;
         }
@@ -2141,9 +2172,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 let mut spans = Vec::new();
                 let gap_size = 6u16;
 
-                if let Some(snum) = row.scene_num {
-                    let s_str = format!("{}", snum);
-                    let s_len = s_str.len() as u16;
+                if let Some(ref snum) = row.scene_num {
+                    let s_str = snum.to_string();
+                    let s_len = UnicodeWidthStr::width(s_str.as_str()) as u16;
 
                     if global_pad >= s_len + gap_size {
                         let pad = global_pad - s_len - gap_size;
@@ -4587,11 +4618,100 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_tab_autocomplete_character_edge_case_dots() {
+        let mut app = create_empty_app();
+        app.lines = vec![
+            "@R.C.".to_string(),
+            "Text".to_string(),
+            "".to_string(),
+            "R".to_string(),
+        ];
+        app.parse_document();
+        app.cursor_y = 3;
+        app.cursor_x = 1;
+
+        app.handle_tab();
+        assert_eq!(
+            app.suggestion.as_deref(),
+            Some(".C."),
+            "First Tab should offer autocomplete suggestion"
+        );
+        assert_eq!(app.lines[3], "R", "Line content should not change yet");
+
+        app.parse_document();
+        app.update_autocomplete();
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[3], "@R.C.",
+            "Should force a character cue with '@' because R.C. ends with a dot"
+        );
+        assert_eq!(app.cursor_x, 5, "Cursor should be at end of line");
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_normal_character_regression() {
+        let mut app = create_empty_app();
+        app.lines = vec![
+            "RENÉ".to_string(),
+            "Text".to_string(),
+            "".to_string(),
+            "RE".to_string(),
+        ];
+        app.parse_document();
+        app.cursor_y = 3;
+        app.cursor_x = 2;
+
+        app.update_autocomplete();
+        assert_eq!(app.suggestion.as_deref(), Some("NÉ"));
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[3], "RENÉ",
+            "Should NOT prepend '@' for regular character names"
+        );
+        assert_eq!(app.cursor_x, 4);
+    }
+
+    #[test]
+    fn test_app_tab_autocomplete_location_normal() {
+        let mut app = create_empty_app();
+        app.lines = vec![
+            "INT. STADTWERKE BITTERFELD-WOLFEN - DAY".to_string(),
+            "Action".to_string(),
+            "".to_string(),
+            ".STADT".to_string(),
+        ];
+        app.parse_document();
+        app.cursor_y = 3;
+        app.cursor_x = 6;
+
+        app.update_autocomplete();
+        assert_eq!(
+            app.suggestion.as_deref(),
+            Some("WERKE BITTERFELD-WOLFEN - DAY")
+        );
+
+        app.handle_tab();
+
+        assert_eq!(
+            app.lines[3], ".STADTWERKE BITTERFELD-WOLFEN - DAY",
+            "Location entered with a dot prefix should not duplicate the dot"
+        );
+        assert_eq!(
+            app.cursor_x, 35,
+            "Cursor should account for the leading dot"
+        );
+    }
+
+    #[test]
     fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.13
+Draft date: Version 0.2.14
 Contact:
 contact@renecoignard.com
 
@@ -4765,7 +4885,7 @@ And Beat itself, of course: https://www.beat-app.fi/
             .iter()
             .find(|r| r.line_idx == scene1_idx)
             .unwrap();
-        assert_eq!(layout_scene.scene_num, Some(1));
+        assert_eq!(layout_scene.scene_num.as_deref(), Some("1"));
 
         let layout_trans = app
             .layout
@@ -4943,7 +5063,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let reference_render = r#"                      Lottie Tutorial
                       Credit: Written by
                       Author: René Coignard
-                      Draft date: Version 0.2.13
+                      Draft date: Version 0.2.14
                       Contact:
                         contact@renecoignard.com
 

@@ -26,7 +26,7 @@ use crate::formatting::{LineFormatting, has_markup_bytes, parse_formatting};
 use crate::types::{LINES_PER_PAGE, LineType, PAGE_WIDTH, get_marker_color};
 
 static SCENE_NUM_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(.*?)\s*(#[\w.\-)]+#)\s*$").unwrap());
+    LazyLock::new(|| Regex::new(r"^(.*?)\s*#([^#]+)#\s*$").unwrap());
 
 /// A single rendered row on screen, derived from one logical line of text.
 ///
@@ -65,7 +65,7 @@ pub struct VisualRow {
 
     /// Scene number to display in the left margin, if scene numbering is enabled
     /// and this is the first visual row of a scene heading.
-    pub scene_num: Option<usize>,
+    pub scene_num: Option<String>,
 
     /// Page number to display in the right margin, set on the *first* printable
     /// non-empty row of each new page.
@@ -358,7 +358,7 @@ pub fn build_layout(
 
     for (i, (line, &lt)) in lines.iter().zip(types.iter()).enumerate() {
         let is_active = i == active_line;
-        let mut scene_num = None;
+        let mut scene_num: Option<String> = None;
         let mut raw_line = Cow::Borrowed(line.as_str());
         let mut line_override_color = None;
         let format_data = if !has_markup_bytes(&raw_line) {
@@ -403,16 +403,32 @@ pub fn build_layout(
         }
 
         if lt == LineType::SceneHeading {
-            scene_counter += 1;
-            if config.show_scene_numbers {
-                scene_num = Some(scene_counter);
-            }
-            if !is_active
-                && raw_line.trim_end().ends_with('#')
-                && raw_line.contains(" #")
+            let mut explicit_scene_num = None;
+
+            if raw_line.trim_end().ends_with('#')
                 && let Some(caps) = SCENE_NUM_RE.captures(&raw_line)
             {
-                raw_line = Cow::Owned(caps[1].to_string());
+                let inner = caps[2].trim();
+                if !inner.is_empty() {
+                    explicit_scene_num = Some(inner.to_string());
+
+                    if !is_active {
+                        raw_line = Cow::Owned(caps[1].to_string());
+                    }
+                }
+            }
+
+            if let Some(ref s) = explicit_scene_num {
+                let digits: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(n) = digits.parse::<usize>() {
+                    scene_counter = n;
+                }
+            } else {
+                scene_counter += 1;
+            }
+
+            if config.show_scene_numbers {
+                scene_num = explicit_scene_num.or_else(|| Some(scene_counter.to_string()));
             }
         }
 
@@ -603,7 +619,7 @@ pub fn build_layout(
                         line_type: lt,
                         indent: current_indent,
                         is_active,
-                        scene_num,
+                        scene_num: scene_num.take(),
                         page_num: None,
                         override_color: line_override_color,
                         fmt: Rc::clone(&format_data),
@@ -618,7 +634,6 @@ pub fn build_layout(
                     current_line.clear();
                     current_line_char_count = 0;
                     cur_w = 0;
-                    scene_num = None;
                     continue;
                 }
 
@@ -668,7 +683,7 @@ pub fn build_layout(
                         line_type: lt,
                         indent: current_indent,
                         is_active,
-                        scene_num,
+                        scene_num: scene_num.take(),
                         page_num: None,
                         override_color: line_override_color,
                         fmt: Rc::clone(&format_data),
@@ -683,7 +698,6 @@ pub fn build_layout(
                     current_line.clear();
                     current_line_char_count = 0;
                     cur_w = 0;
-                    scene_num = None;
                     remaining_token = part2;
                 } else {
                     current_line.push_str(remaining_token);
@@ -900,8 +914,8 @@ mod layout_tests {
 
         let layout = build_layout(&lines, &types, 99, &config);
 
-        assert_eq!(layout[0].scene_num, Some(1));
-        assert_eq!(layout[2].scene_num, Some(2));
+        assert_eq!(layout[0].scene_num, Some("1".to_string()));
+        assert_eq!(layout[2].scene_num, Some("2".to_string()));
     }
 
     #[test]
@@ -1490,6 +1504,59 @@ mod layout_tests {
         };
 
         assert_eq!(row.visual_to_logical_x(100, false), 1);
+    }
+
+    #[test]
+    fn test_layout_explicit_scene_numbers_logic() {
+        let config = Config {
+            show_scene_numbers: true,
+            ..Config::default()
+        };
+
+        let lines = vec![
+            "INT. ONE".to_string(),
+            "INT. TWO #5#".to_string(),
+            "INT. THREE".to_string(),
+            "INT. FOUR #6A#".to_string(),
+            "INT. FIVE".to_string(),
+            "INT. SIX#10#".to_string(),
+            "INT. SEVEN #B#".to_string(),
+            "INT. EIGHT".to_string(),
+        ];
+        let types = vec![LineType::SceneHeading; 8];
+
+        let layout = build_layout(&lines, &types, 99, &config);
+        let scenes: Vec<_> = layout
+            .iter()
+            .filter(|r| r.line_type == LineType::SceneHeading)
+            .collect();
+
+        assert_eq!(scenes[0].scene_num.as_deref(), Some("1"));
+        assert_eq!(scenes[1].scene_num.as_deref(), Some("5"));
+        assert_eq!(scenes[1].raw_text, "INT. TWO");
+        assert_eq!(scenes[2].scene_num.as_deref(), Some("6"));
+        assert_eq!(scenes[3].scene_num.as_deref(), Some("6A"));
+        assert_eq!(scenes[3].raw_text, "INT. FOUR");
+        assert_eq!(scenes[4].scene_num.as_deref(), Some("7"));
+        assert_eq!(scenes[5].scene_num.as_deref(), Some("10"));
+        assert_eq!(scenes[5].raw_text, "INT. SIX");
+        assert_eq!(scenes[6].scene_num.as_deref(), Some("B"));
+        assert_eq!(scenes[6].raw_text, "INT. SEVEN");
+        assert_eq!(scenes[7].scene_num.as_deref(), Some("11"));
+    }
+
+    #[test]
+    fn test_layout_explicit_scene_numbers_active_line() {
+        let config = Config {
+            show_scene_numbers: true,
+            ..Config::default()
+        };
+        let lines = vec!["INT. KITCHEN #5#".to_string()];
+        let types = vec![LineType::SceneHeading];
+        let layout = build_layout(&lines, &types, 0, &config);
+
+        assert_eq!(layout[0].scene_num.as_deref(), Some("5"));
+        assert_eq!(layout[0].raw_text, "INT. KITCHEN #5#");
     }
 }
 
