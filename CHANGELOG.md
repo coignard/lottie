@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.15
+
+### Added
+- Dual dialogue layout: `DualDialogueCharacter`, `Dialogue`, `Parenthetical`, and `Empty` lines inside a dual dialogue block now receive a +10 column indent offset, correctly positioning two characters' lines side by side on the page
+
+### Changed
+- Version bumped to 0.2.15
+
+### Removed
+- Removed `assets/demo.gif`
+
 ## 0.2.14
 
 ### Added

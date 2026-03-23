@@ -348,6 +348,7 @@ pub fn build_layout(
 ) -> Vec<VisualRow> {
     let mut rows: Vec<VisualRow> = Vec::with_capacity(lines.len() + 32);
     let mut last_speaking_character = String::new();
+    let mut in_dual_dialogue = false;
     let mut scene_counter = 0;
     let mut printable_row_count = 0;
     let mut page_number = 1;
@@ -400,6 +401,36 @@ pub fn build_layout(
 
         if matches!(lt, LineType::SceneHeading | LineType::Transition) {
             last_speaking_character.clear();
+        }
+
+        match lt {
+            LineType::DualDialogueCharacter => in_dual_dialogue = true,
+            LineType::Character
+            | LineType::SceneHeading
+            | LineType::Transition
+            | LineType::Action
+            | LineType::Shot
+            | LineType::Section
+            | LineType::Synopsis
+            | LineType::PageBreak
+            | LineType::Centered
+            | LineType::Lyrics => {
+                in_dual_dialogue = false;
+            }
+            LineType::Empty => {
+                if i > 0
+                    && !matches!(
+                        types[i - 1],
+                        LineType::Character
+                            | LineType::DualDialogueCharacter
+                            | LineType::Dialogue
+                            | LineType::Parenthetical
+                    )
+                {
+                    in_dual_dialogue = false;
+                }
+            }
+            _ => {}
         }
 
         if lt == LineType::SceneHeading {
@@ -508,6 +539,21 @@ pub fn build_layout(
                     fmt_rules.indent = LineType::Dialogue.fmt().indent;
                 }
                 _ => {}
+            }
+        }
+
+        if in_dual_dialogue
+            && matches!(
+                lt,
+                LineType::DualDialogueCharacter
+                    | LineType::Dialogue
+                    | LineType::Parenthetical
+                    | LineType::Empty
+            )
+        {
+            fmt_rules.indent += 10;
+            if let Some(wrap_indent) = fmt_rules.wrap_indent.as_mut() {
+                *wrap_indent += 10;
             }
         }
 
@@ -922,24 +968,36 @@ mod layout_tests {
     fn test_build_layout_auto_contd() {
         let config = Config {
             auto_contd: true,
-            contd_extension: "(CONT'D)".to_string(),
+            contd_extension: "(ПРОД.)".to_string(),
             ..Config::default()
         };
         let lines = vec![
-            "CHARLOTTE".to_string(),
-            "Text".to_string(),
+            "МАТРОС".to_string(),
+            "Капитан, у нас айсберг по курсу корабля!".to_string(),
             "".to_string(),
-            "CHARLOTTE".to_string(),
+            "КАПИТАН".to_string(),
+            "(удивлённо)".to_string(),
+            "Айсберг по курсу корабля?".to_string(),
+            "".to_string(),
+            "КАПИТАН".to_string(),
+            "Дороговато!".to_string(),
         ];
         let types = vec![
             LineType::Character,
             LineType::Dialogue,
             LineType::Empty,
             LineType::Character,
+            LineType::Parenthetical,
+            LineType::Dialogue,
+            LineType::Empty,
+            LineType::Character,
+            LineType::Dialogue,
         ];
         let layout = build_layout(&lines, &types, 99, &config);
-        assert_eq!(layout[0].raw_text, "CHARLOTTE");
-        assert_eq!(layout[3].raw_text, "CHARLOTTE (CONT'D)");
+
+        assert_eq!(layout[0].raw_text, "МАТРОС");
+        assert_eq!(layout[4].raw_text, "КАПИТАН");
+        assert_eq!(layout[8].raw_text, "КАПИТАН (ПРОД.)");
     }
 
     #[test]
