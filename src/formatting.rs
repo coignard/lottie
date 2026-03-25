@@ -787,4 +787,27 @@ mod formatting_tests {
         let spans = render_inline("/* boneyard */", Style::default(), &fmt, cfg, &hl);
         assert_eq!(spans[0].style.fg, Some(ratatui::style::Color::DarkGray));
     }
+
+    #[test]
+    fn test_parse_formatting_notes_with_strict_colors() {
+        let fmt1 = parse_formatting("[[yellow note]]");
+        assert_eq!(
+            fmt1.note_color.get(&5),
+            Some(&ratatui::style::Color::Yellow),
+            "Yellow note must be mapped to Yellow color"
+        );
+
+        let fmt2 = parse_formatting("[[this is yellow]]");
+        assert!(
+            fmt2.note_color.is_empty(),
+            "Color word inside the note text must be ignored"
+        );
+
+        let fmt3 = parse_formatting("[[marker red]]");
+        assert_eq!(
+            fmt3.note_color.get(&5),
+            Some(&ratatui::style::Color::Red),
+            "Marker prefix followed by Red must be Red"
+        );
+    }
 }

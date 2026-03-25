@@ -1248,19 +1248,68 @@ impl App {
     /// the relevant auto-close options are enabled and the context is
     /// appropriate.
     pub fn insert_char(&mut self, c: char) {
-        if self.last_edit != LastEdit::Insert || c.is_whitespace() || ".,;?!()[]*".contains(c) {
+        if self.last_edit != LastEdit::Insert || c.is_whitespace() || ".,;?!()[]*\"'".contains(c) {
             self.save_state(true);
         }
         self.last_edit = LastEdit::Insert;
 
         let b = self.byte_of(self.cursor_y, self.cursor_x);
+        let line = &self.lines[self.cursor_y];
+
+        let next_char = line[b..].chars().next();
+        let prev_char = if b > 0 {
+            line[..b].chars().next_back()
+        } else {
+            None
+        };
+
+        let mut valid_left_quotes = 0;
+        let mut prev_c_in_iter = ' ';
+        for ch in line[..b].chars() {
+            if ch == c && !(c == '\'' && prev_c_in_iter.is_alphanumeric()) {
+                valid_left_quotes += 1;
+            }
+            prev_c_in_iter = ch;
+        }
+
+        let is_inside_string = valid_left_quotes % 2 != 0;
+        let next_is_word = next_char.is_some_and(|nc| nc.is_alphanumeric());
+        let prev_is_word = prev_char.is_some_and(|pc| pc.is_alphanumeric());
+
+        let step_over = if (c == '"' || c == '\'') && self.config.match_parentheses {
+            is_inside_string && next_char == Some(c)
+        } else if c == ')' && self.config.match_parentheses {
+            next_char == Some(')')
+        } else if c == ']' && self.config.close_elements {
+            next_char == Some(']')
+        } else {
+            false
+        };
+
+        if step_over {
+            self.cursor_x += 1;
+            self.dirty = true;
+            return;
+        }
+
         self.lines[self.cursor_y].insert(b, c);
         let new_b = b + c.len_utf8();
         self.cursor_x += 1;
 
-        if c == '(' && self.config.match_parentheses {
-            self.lines[self.cursor_y].insert(new_b, ')');
-        } else if c == '[' && self.config.close_elements {
+        if self.config.match_parentheses {
+            if c == '(' {
+                if !next_is_word {
+                    self.lines[self.cursor_y].insert(new_b, ')');
+                }
+            } else if (c == '"' || c == '\'') && !is_inside_string {
+                let is_apostrophe = c == '\'' && prev_is_word;
+                if !is_apostrophe && !next_is_word {
+                    self.lines[self.cursor_y].insert(new_b, c);
+                }
+            }
+        }
+
+        if c == '[' && self.config.close_elements {
             if self.lines[self.cursor_y][..new_b].ends_with("[[") {
                 self.lines[self.cursor_y].insert_str(new_b, "]]");
             }
@@ -1562,30 +1611,36 @@ impl App {
             let cx = self.cursor_x;
 
             if cx >= 1 && cx < line.chars().count() {
-                let bytes = line.char_indices().map(|(b, _)| b).collect::<Vec<_>>();
-                let char_idx = cx;
-                if let (Some(&b1), Some(&b2)) = (
-                    bytes.get(char_idx - 1),
-                    bytes.get(char_idx + 1).or(Some(&line.len())),
-                ) {
-                    let pair = &line[b1..b2];
-                    if pair == "()" {
-                        self.lines[self.cursor_y].replace_range(b1..b2, "");
-                        self.cursor_x -= 1;
+                let mut chars = line.chars().skip(cx - 1);
+                if let (Some(c1), Some(c2)) = (chars.next(), chars.next())
+                    && matches!((c1, c2), ('(', ')') | ('"', '"') | ('\'', '\''))
+                {
+                    let b_start = self.byte_of(self.cursor_y, cx - 1);
+                    let b_end = self.byte_of(self.cursor_y, cx + 1);
+                    self.lines[self.cursor_y].replace_range(b_start..b_end, "");
+                    self.cursor_x -= 1;
+                    self.dirty = true;
+                    return;
+                }
+            }
+
+            if cx >= 2 && cx + 1 < line.chars().count() {
+                let mut chars = line.chars().skip(cx - 2);
+                if let (Some(c1), Some(c2), Some(c3), Some(c4)) =
+                    (chars.next(), chars.next(), chars.next(), chars.next())
+                {
+                    let arr = [c1, c2, c3, c4];
+                    if matches!(
+                        arr,
+                        ['[', '[', ']', ']'] | ['/', '*', '*', '/'] | ['*', '*', '*', '*']
+                    ) {
+                        let b_start = self.byte_of(self.cursor_y, cx - 2);
+                        let b_end = self.byte_of(self.cursor_y, cx + 2);
+                        self.lines[self.cursor_y].replace_range(b_start..b_end, "");
+                        self.cursor_x -= 2;
                         self.dirty = true;
                         return;
                     }
-                }
-            }
-            if cx >= 2 && cx + 1 < line.chars().count() {
-                let chars: String = line.chars().skip(cx - 2).take(4).collect();
-                if chars == "[[]]" || chars == "/**/" || chars == "****" {
-                    let b_start = self.byte_of(self.cursor_y, cx - 2);
-                    let b_end = self.byte_of(self.cursor_y, cx + 2);
-                    self.lines[self.cursor_y].replace_range(b_start..b_end, "");
-                    self.cursor_x -= 2;
-                    self.dirty = true;
-                    return;
                 }
             }
 
@@ -1620,20 +1675,27 @@ impl App {
         let line = &self.lines[self.cursor_y];
         let cx = self.cursor_x;
 
-        if cx > 0 && cx + 1 < line.chars().count() {
-            let chars: String = line.chars().skip(cx - 1).take(2).collect();
-            if chars == "()" {
-                let b_start = self.byte_of(self.cursor_y, cx - 1);
-                let b_end = self.byte_of(self.cursor_y, cx + 1);
+        let mut chars = line.chars().skip(cx);
+        let c1 = chars.next();
+        let c2 = chars.next();
+        let c3 = chars.next();
+        let c4 = chars.next();
+
+        if let (Some(a), Some(b)) = (c1, c2) {
+            if matches!((a, b), ('(', ')') | ('"', '"') | ('\'', '\'')) {
+                let b_start = self.byte_of(self.cursor_y, cx);
+                let b_end = self.byte_of(self.cursor_y, cx + 2);
                 self.lines[self.cursor_y].replace_range(b_start..b_end, "");
-                self.cursor_x -= 1;
                 self.dirty = true;
                 return;
             }
-        }
-        if cx + 3 < line.chars().count() {
-            let chars: String = line.chars().skip(cx).take(4).collect();
-            if chars == "[[]]" || chars == "/**/" || chars == "****" {
+
+            if let (Some(c), Some(d)) = (c3, c4)
+                && matches!(
+                    [a, b, c, d],
+                    ['[', '[', ']', ']'] | ['/', '*', '*', '/'] | ['*', '*', '*', '*']
+                )
+            {
                 let b_start = self.byte_of(self.cursor_y, cx);
                 let b_end = self.byte_of(self.cursor_y, cx + 4);
                 self.lines[self.cursor_y].replace_range(b_start..b_end, "");
@@ -4707,11 +4769,400 @@ mod app_tests {
     }
 
     #[test]
+    fn test_ux_smart_pairing_basic_triggers() {
+        let mut app = create_empty_app();
+        app.config.match_parentheses = true;
+
+        app.insert_char('(');
+        assert_eq!(app.lines[0], "()", "Failed to auto-pair parentheses");
+        assert_eq!(
+            app.cursor_x, 1,
+            "Cursor should be placed inside the parentheses"
+        );
+        assert!(app.dirty, "Document should be marked dirty after insertion");
+
+        app.lines = vec!["".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('"');
+        assert_eq!(app.lines[0], "\"\"", "Failed to auto-pair double quotes");
+        assert_eq!(
+            app.cursor_x, 1,
+            "Cursor should be placed inside the double quotes"
+        );
+
+        app.lines = vec!["".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('\'');
+        assert_eq!(app.lines[0], "''", "Failed to auto-pair single quotes");
+        assert_eq!(
+            app.cursor_x, 1,
+            "Cursor should be placed inside the single quotes"
+        );
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_step_over_existing_closing_chars() {
+        let mut app = create_empty_app();
+        app.config.match_parentheses = true;
+        app.config.close_elements = true;
+
+        app.lines = vec!["()".to_string()];
+        app.cursor_x = 1;
+        app.insert_char(')');
+        assert_eq!(
+            app.lines[0], "()",
+            "Should step over existing closing parenthesis"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor should advance past the closing parenthesis"
+        );
+
+        app.lines = vec!["\"\"".to_string()];
+        app.cursor_x = 1;
+        app.insert_char('"');
+        assert_eq!(
+            app.lines[0], "\"\"",
+            "Should step over existing closing double quote"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor should advance past the closing double quote"
+        );
+
+        app.lines = vec!["''".to_string()];
+        app.cursor_x = 1;
+        app.insert_char('\'');
+        assert_eq!(
+            app.lines[0], "''",
+            "Should step over existing closing single quote"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor should advance past the closing single quote"
+        );
+
+        app.lines = vec!["[[]]".to_string()];
+        app.cursor_x = 2;
+        app.insert_char(']');
+        assert_eq!(
+            app.lines[0], "[[]]",
+            "Should step over existing closing bracket in Fountain notes"
+        );
+        assert_eq!(
+            app.cursor_x, 3,
+            "Cursor should advance past the first closing bracket"
+        );
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_alphanumeric_boundary_rules() {
+        let mut app = create_empty_app();
+        app.config.match_parentheses = true;
+
+        app.lines = vec!["word".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('(');
+        assert_eq!(
+            app.lines[0], "(word",
+            "Should not auto-pair when directly preceding an alphanumeric character"
+        );
+        assert_eq!(app.cursor_x, 1, "Cursor should advance normally");
+
+        app.lines = vec!["word".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('"');
+        assert_eq!(
+            app.lines[0], "\"word",
+            "Should not auto-pair double quotes when directly preceding a word"
+        );
+
+        app.lines = vec![" word".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('(');
+        assert_eq!(
+            app.lines[0], "() word",
+            "Should auto-pair when preceding whitespace"
+        );
+
+        app.lines = vec!["don".to_string()];
+        app.cursor_x = 3;
+        app.insert_char('\'');
+        assert_eq!(
+            app.lines[0], "don'",
+            "Single quote immediately following an alphanumeric character must be treated as an apostrophe, not a pair"
+        );
+
+        app.lines = vec!["don ".to_string()];
+        app.cursor_x = 4;
+        app.insert_char('\'');
+        assert_eq!(
+            app.lines[0], "don ''",
+            "Single quote following a space must be treated as a pairable quote"
+        );
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_quote_parity_and_apostrophe_logic() {
+        let mut app = create_empty_app();
+        app.config.match_parentheses = true;
+
+        app.lines = vec!["\"hello\"".to_string()];
+        app.cursor_x = 6;
+        app.insert_char('"');
+        assert_eq!(
+            app.lines[0], "\"hello\"",
+            "Should recognize odd parity inside a string and step over the closing quote"
+        );
+        assert_eq!(app.cursor_x, 7, "Cursor should advance past the quote");
+
+        app.lines = vec!["\"hello\" ".to_string()];
+        app.cursor_x = 8;
+        app.insert_char('"');
+        assert_eq!(
+            app.lines[0], "\"hello\" \"\"",
+            "Should recognize even parity outside strings and create a new pair"
+        );
+        assert_eq!(
+            app.cursor_x, 9,
+            "Cursor should be placed inside the new pair"
+        );
+
+        app.lines = vec!["don't say ".to_string()];
+        app.cursor_x = 10;
+        app.insert_char('"');
+        assert_eq!(
+            app.lines[0], "don't say \"\"",
+            "Apostrophes must be strictly excluded from string literal parity counts"
+        );
+        assert_eq!(
+            app.cursor_x, 11,
+            "Cursor should be placed inside the double quotes"
+        );
+
+        app.lines = vec!["don't say ".to_string()];
+        app.cursor_x = 10;
+        app.insert_char('\'');
+        assert_eq!(
+            app.lines[0], "don't say ''",
+            "Apostrophes must not prevent single quotes from pairing properly in valid contexts"
+        );
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_fountain_multichar_elements() {
+        let mut app = create_empty_app();
+        app.config.close_elements = true;
+
+        app.lines = vec!["[".to_string()];
+        app.cursor_x = 1;
+        app.insert_char('[');
+        assert_eq!(
+            app.lines[0], "[[]]",
+            "Consecutive open brackets must trigger Fountain note auto-completion"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor must be placed inside the Fountain note"
+        );
+
+        app.lines = vec!["/".to_string()];
+        app.cursor_x = 1;
+        app.insert_char('*');
+        assert_eq!(
+            app.lines[0], "/**/",
+            "Slash followed by asterisk must trigger boneyard auto-completion"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor must be placed inside the boneyard markers"
+        );
+
+        app.lines = vec!["*".to_string()];
+        app.cursor_x = 1;
+        app.insert_char('*');
+        assert_eq!(
+            app.lines[0], "****",
+            "Consecutive asterisks must trigger bold markdown auto-completion"
+        );
+        assert_eq!(
+            app.cursor_x, 2,
+            "Cursor must be placed inside the bold markers"
+        );
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_backspace_removes_both_pairs_safely() {
+        let mut app = create_empty_app();
+
+        let pairs_to_test = vec![
+            ("()", 1),
+            ("\"\"", 1),
+            ("''", 1),
+            ("[[]]", 2),
+            ("/**/", 2),
+            ("****", 2),
+        ];
+
+        for (text, cursor_pos) in pairs_to_test {
+            app.lines = vec![text.to_string()];
+            app.cursor_x = cursor_pos;
+            app.backspace();
+            assert_eq!(
+                app.lines[0], "",
+                "Backspace failed to cleanly remove the empty pair sequence: {}",
+                text
+            );
+            assert_eq!(
+                app.cursor_x, 0,
+                "Cursor should return to position 0 after pair deletion"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_delete_forward_removes_both_pairs_safely() {
+        let mut app = create_empty_app();
+
+        let pairs_to_test = vec![
+            ("()", 0),
+            ("\"\"", 0),
+            ("''", 0),
+            ("[[]]", 0),
+            ("/**/", 0),
+            ("****", 0),
+        ];
+
+        for (text, cursor_pos) in pairs_to_test {
+            app.lines = vec![text.to_string()];
+            app.cursor_x = cursor_pos;
+            app.delete_forward();
+            assert_eq!(
+                app.lines[0], "",
+                "Forward delete failed to cleanly remove the empty pair sequence: {}",
+                text
+            );
+            assert_eq!(
+                app.cursor_x, 0,
+                "Cursor should remain at position 0 after pair deletion"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ux_smart_pairing_unicode_and_emoji_boundaries() {
+        let mut app = create_empty_app();
+        app.config.match_parentheses = true;
+
+        app.lines = vec!["слово".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('(');
+        assert_eq!(
+            app.lines[0], "(слово",
+            "Cyrillic characters must be treated as alphanumeric, preventing auto-pairing"
+        );
+
+        app.lines = vec!["🦀".to_string()];
+        app.cursor_x = 0;
+        app.insert_char('(');
+        assert_eq!(
+            app.lines[0], "()🦀",
+            "Emojis are not alphanumeric and must allow auto-pairing"
+        );
+
+        app.lines = vec!["Д".to_string()];
+        app.cursor_x = 1;
+        app.insert_char('\'');
+        assert_eq!(
+            app.lines[0], "Д'",
+            "Apostrophe logic must correctly identify Cyrillic boundaries"
+        );
+
+        app.lines = vec!["Привет()Мир".to_string()];
+        app.cursor_x = 7;
+        app.backspace();
+        assert_eq!(
+            app.lines[0], "ПриветМир",
+            "Pair deletion must respect multi-byte character boundaries during string mutation"
+        );
+        assert_eq!(
+            app.cursor_x, 6,
+            "Cursor must strictly track character indexing, not byte indexing, after pair deletion"
+        );
+    }
+
+    #[test]
+    fn test_app_inline_note_color_parsing_strictness() {
+        let mut app = create_empty_app();
+
+        app.lines = vec![
+            "[[yellow text]]".to_string(),
+            "[[this comment is yellow]]".to_string(),
+            "[[marker]]".to_string(),
+            "[[marker blue text]]".to_string(),
+            "Action with [[green inline note]] inside.".to_string(),
+            "Action with [[this is not green]] inside.".to_string(),
+            "[[marker invalid color]]".to_string(),
+        ];
+
+        app.parse_document();
+        app.update_layout();
+
+        let note_yellow = &app.layout[0];
+        assert_eq!(
+            note_yellow.override_color,
+            Some(ratatui::style::Color::Yellow),
+            "Note starting with yellow must be yellow"
+        );
+
+        let note_none = &app.layout[1];
+        assert_eq!(
+            note_none.override_color, None,
+            "Color word inside the text must be ignored"
+        );
+
+        let note_marker = &app.layout[2];
+        assert_eq!(
+            note_marker.override_color,
+            Some(ratatui::style::Color::Rgb(255, 165, 0)),
+            "Marker prefix without valid color must be orange"
+        );
+
+        let note_marker_blue = &app.layout[3];
+        assert_eq!(
+            note_marker_blue.override_color,
+            Some(ratatui::style::Color::Blue),
+            "Marker prefix with blue must be blue"
+        );
+
+        let action_green = &app.layout[4];
+        let color_green = action_green.fmt.note_color.values().next().copied();
+        assert_eq!(
+            color_green,
+            Some(ratatui::style::Color::Green),
+            "Inline note starting with green must be green"
+        );
+
+        let action_none = &app.layout[5];
+        assert!(
+            action_none.fmt.note_color.is_empty(),
+            "Inline note with color word inside text must not have a color override"
+        );
+
+        let note_marker_invalid = &app.layout[6];
+        assert_eq!(
+            note_marker_invalid.override_color,
+            Some(ratatui::style::Color::Rgb(255, 165, 0)),
+            "Marker prefix with invalid color must fallback to orange"
+        );
+    }
+
+    #[test]
     fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.15
+Draft date: Version 0.2.16
 Contact:
 contact@renecoignard.com
 
@@ -5063,7 +5514,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let reference_render = r#"                      Lottie Tutorial
                       Credit: Written by
                       Author: René Coignard
-                      Draft date: Version 0.2.15
+                      Draft date: Version 0.2.16
                       Contact:
                         contact@renecoignard.com
 

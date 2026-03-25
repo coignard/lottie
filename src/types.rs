@@ -271,28 +271,34 @@ pub fn base_style(lt: LineType, config: &Config) -> Style {
 ///
 /// Returns `None` if no recognised colour keyword is present.
 pub fn get_marker_color(note_text: &str) -> Option<Color> {
-    let lower = note_text.to_lowercase();
-    if lower.contains("red") {
-        Some(Color::Red)
-    } else if lower.contains("blue") {
-        Some(Color::Blue)
-    } else if lower.contains("green") {
-        Some(Color::Green)
-    } else if lower.contains("pink") || lower.contains("magenta") {
-        Some(Color::Magenta)
-    } else if lower.contains("cyan") || lower.contains("teal") {
-        Some(Color::Cyan)
-    } else if lower.contains("yellow") {
-        Some(Color::Yellow)
-    } else if lower.contains("orange") || lower.contains("brown") {
-        Some(Color::Rgb(255, 165, 0))
-    } else if lower.contains("gray") {
-        Some(Color::Gray)
-    } else if lower.starts_with("marker") {
-        Some(Color::Rgb(255, 165, 0))
-    } else {
-        None
+    let mut words = note_text.split_whitespace();
+    let first_word = words.next()?.to_lowercase();
+
+    let color_from_str = |w: &str| -> Option<Color> {
+        match w {
+            "red" => Some(Color::Red),
+            "blue" => Some(Color::Blue),
+            "green" => Some(Color::Green),
+            "pink" | "magenta" => Some(Color::Magenta),
+            "cyan" | "teal" => Some(Color::Cyan),
+            "yellow" => Some(Color::Yellow), // your favourite color
+            "orange" | "brown" => Some(Color::Rgb(255, 165, 0)),
+            "gray" | "grey" => Some(Color::Gray),
+            _ => None,
+        }
+    };
+
+    if first_word == "marker" {
+        if let Some(second_word) = words.next() {
+            let second_lower = second_word.to_lowercase();
+            if let Some(c) = color_from_str(&second_lower) {
+                return Some(c);
+            }
+        }
+        return Some(Color::Rgb(255, 165, 0));
     }
+
+    color_from_str(&first_word)
 }
 
 #[cfg(test)]
@@ -404,6 +410,7 @@ mod types_tests {
         assert_eq!(get_marker_color("teal"), Some(Color::Cyan));
         assert_eq!(get_marker_color("orange"), Some(Color::Rgb(255, 165, 0)));
         assert_eq!(get_marker_color("brown"), Some(Color::Rgb(255, 165, 0)));
+        assert_eq!(get_marker_color("grey"), Some(Color::Gray));
     }
 
     #[test]
@@ -477,5 +484,38 @@ mod types_tests {
         assert_eq!(fmt2.indent, 5);
         assert_eq!(fmt2.width, 50);
         assert_eq!(fmt2.wrap_indent, Some(10));
+    }
+
+    #[test]
+    fn test_get_marker_color_strict_first_word() {
+        assert_eq!(get_marker_color("red"), Some(Color::Red));
+        assert_eq!(get_marker_color("red text here"), Some(Color::Red));
+        assert_eq!(get_marker_color("blue background"), Some(Color::Blue));
+        assert_eq!(get_marker_color("  green  "), Some(Color::Green));
+        assert_eq!(get_marker_color("magenta note"), Some(Color::Magenta));
+        assert_eq!(get_marker_color("cyan marker"), Some(Color::Cyan));
+        assert_eq!(get_marker_color("yellow"), Some(Color::Yellow));
+        assert_eq!(get_marker_color("gray area"), Some(Color::Gray));
+    }
+
+    #[test]
+    fn test_get_marker_color_ignores_inner_words() {
+        assert_eq!(get_marker_color("this is red"), None);
+        assert_eq!(get_marker_color("a blue note"), None);
+        assert_eq!(get_marker_color("please make this green"), None);
+        assert_eq!(get_marker_color("just a plain note"), None);
+    }
+
+    #[test]
+    fn test_get_marker_color_marker_prefix() {
+        assert_eq!(get_marker_color("marker"), Some(Color::Rgb(255, 165, 0)));
+        assert_eq!(
+            get_marker_color("marker custom text"),
+            Some(Color::Rgb(255, 165, 0))
+        );
+        assert_eq!(get_marker_color("marker red"), Some(Color::Red));
+        assert_eq!(get_marker_color("marker blue text"), Some(Color::Blue));
+        assert_eq!(get_marker_color("marker teal something"), Some(Color::Cyan));
+        assert_eq!(get_marker_color("  marker   pink  "), Some(Color::Magenta));
     }
 }

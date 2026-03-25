@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.16
+
+### Added
+- Smart auto-pairing for double quotes (`"`) and single quotes (`'`) with parity tracking: inserting a quote creates a matching pair when outside a string, and steps over the closing quote when inside one
+- Apostrophe detection: single quote immediately following an alphanumeric character is treated as an apostrophe and not paired
+- Alphanumeric boundary rule: `(`, `"`, and `'` are not auto-paired when the next character is alphanumeric
+- Step-over logic for `)`, `"`, `'`, and `]`: typing a closing character over an existing one advances the cursor instead of inserting
+- Backspace and forward-delete now remove both characters of an empty `""` and `''` pair in a single keystroke
+- `grey` accepted as an alias for `gray` in note colour keywords
+
+### Fixed
+- `get_marker_color` now matches only the first word of a note instead of scanning with `contains()`, preventing false positives such as `"this is yellow"` being coloured yellow
+
+### Changed
+- Version bump to 0.2.16
+
 ## 0.2.15
 
 ### Added
