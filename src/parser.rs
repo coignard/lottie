@@ -324,8 +324,12 @@ impl Parser {
         {
             let prefix = &s[..dot_idx];
             if !prefix.contains(' ') && !prefix.is_empty() {
-                let remainder = &s[dot_idx..];
-                if remainder.contains(" - ") || remainder.contains(" - ") {
+                let remainder = &s[dot_idx + 2..];
+                if remainder.contains(" - ")
+                    || remainder.contains(" – ")
+                    || remainder.contains(" — ")
+                    || remainder.contains(". ")
+                {
                     return true;
                 }
             }
@@ -625,7 +629,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn test_parse_russian_metadata() {
+    fn test_parse_cyrillic_metadata() {
         let lines = vec![
             "Автор: Рене".to_string(),
             "".to_string(),
@@ -636,7 +640,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn test_parse_russian_transition() {
+    fn test_parse_cyrillic_transition() {
         let lines = vec![
             "ИЗ ЗТМ:".to_string(),
             "".to_string(),
@@ -660,7 +664,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn test_parse_russian_metadata_with_unicode_regex() {
+    fn test_parse_cyrillic_metadata_with_unicode_regex() {
         let lines = vec![
             "Автор: Рене".to_string(),
             "".to_string(),
@@ -697,5 +701,24 @@ mod parser_tests {
     fn test_parser_is_scene_heading_fast_return() {
         assert!(Parser::is_scene_heading("INT"));
         assert!(Parser::is_scene_heading("EXT"));
+    }
+
+    #[test]
+    fn test_parse_cyrillic_scene_heading_with_dot() {
+        let lines = vec![
+            "".to_string(),
+            "НАТ. МЕСТО. ДЕНЬ".to_string(),
+            "".to_string(),
+            "ИНТ. МЕСТО – ДЕНЬ".to_string(),
+            "".to_string(),
+            "НАТ. МЕСТО — ДЕНЬ".to_string(),
+            "".to_string(),
+            "ЭТО НЕ СЦЕНА. ЭТО ПРОСТО ПРЕДЛОЖЕНИЕ КРУПНЫМ ШРИФТОМ".to_string(),
+        ];
+        let types = Parser::parse(&lines);
+        assert_eq!(types[1], LineType::SceneHeading);
+        assert_eq!(types[3], LineType::SceneHeading);
+        assert_eq!(types[5], LineType::SceneHeading);
+        assert_ne!(types[7], LineType::SceneHeading);
     }
 }

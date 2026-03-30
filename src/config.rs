@@ -33,6 +33,10 @@ set show_scene_numbers
 # Show page numbers on the right side of the screen.
 set show_page_numbers
 
+# Mirror scene numbers to the right margin instead of page numbers.
+# Available values: "always" (editor and export), "export" (export only), "off"
+set mirror_scene_numbers "export"
+
 # Automatically hide Fountain markup when the cursor is not
 # on the current line.
 set hide_markup
@@ -118,6 +122,21 @@ unset force_ansi
 unset force_ascii
 "#;
 
+/// Controls whether scene numbers are mirrored to the right margin
+/// instead of page numbers.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub enum MirrorOption {
+    /// Never mirror scene numbers; display page numbers in the right margin.
+    Off,
+
+    /// Always mirror scene numbers, both in the editor and during export.
+    Always,
+
+    /// Mirror scene numbers only during export; show page numbers in the editor.
+    #[default]
+    ExportOnly,
+}
+
 /// Command-line arguments parsed by [`clap`].
 ///
 /// All flag names mirror the configuration file directives so that CLI options
@@ -193,6 +212,10 @@ pub struct Cli {
     /// Open the file with the cursor at the end
     #[arg(long)]
     pub goto_end: bool,
+
+    /// Mirror scene numbers to the right margin instead of page numbers
+    #[arg(long, value_name = "MODE", num_args = 0..=1, default_missing_value = "always")]
+    pub mirror_scene_numbers: Option<String>,
 
     /// Set (CONT'D) extension text
     #[arg(long)]
@@ -312,6 +335,9 @@ pub struct Config {
     /// as supporting colour.  Overrides `no_color`.
     pub force_ansi: bool,
 
+    /// Mirror scene numbers to the right margin instead of page numbers.
+    pub mirror_scene_numbers: MirrorOption,
+
     /// The string appended to a character name for consecutive speech, e.g.
     /// `"(CONT'D)"`.
     pub contd_extension: String,
@@ -358,6 +384,8 @@ impl Default for Config {
             no_formatting: false,
             force_ascii: false,
             force_ansi: false,
+
+            mirror_scene_numbers: MirrorOption::ExportOnly,
         }
     }
 }
@@ -402,6 +430,13 @@ impl Config {
                         "highlight_active_action" => self.highlight_active_action = true,
                         "break_actions" => self.break_actions = true,
                         "goto_end" => self.goto_end = true,
+                        "mirror_scene_numbers" => {
+                            self.mirror_scene_numbers = match val.as_str() {
+                                "export" => MirrorOption::ExportOnly,
+                                "off" | "false" => MirrorOption::Off,
+                                _ => MirrorOption::Always,
+                            };
+                        }
                         "contd_extension" => self.contd_extension = val,
                         "heading_style" => self.heading_style = val,
                         "heading_spacing" => {
@@ -433,6 +468,7 @@ impl Config {
                         "highlight_active_action" => self.highlight_active_action = false,
                         "break_actions" => self.break_actions = false,
                         "goto_end" => self.goto_end = false,
+                        "mirror_scene_numbers" => self.mirror_scene_numbers = MirrorOption::Off,
                         "no_color" => self.no_color = false,
                         "no_formatting" => self.no_formatting = false,
                         "force_ascii" => self.force_ascii = false,
@@ -461,8 +497,23 @@ impl Config {
 
         let is_custom_path = cli.config.is_some();
         let config_path = cli.config.clone().or_else(|| {
-            directories::ProjectDirs::from("org", "coignard", "lottie")
-                .map(|proj_dirs| proj_dirs.config_dir().join("lottie.conf"))
+            #[cfg(windows)]
+            {
+                directories::ProjectDirs::from("", "", "Lottie")
+                    .map(|proj_dirs| proj_dirs.config_dir().join("lottie.conf"))
+            }
+            #[cfg(not(windows))]
+            {
+                let config_dir = std::env::var_os("XDG_CONFIG_HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| {
+                        directories::BaseDirs::new()
+                            .map(|base| base.home_dir().join(".config"))
+                            .unwrap_or_default()
+                    });
+
+                Some(config_dir.join("lottie").join("lottie.conf"))
+            }
         });
 
         if let Some(path) = config_path {
@@ -506,6 +557,14 @@ impl Config {
         config.force_ascii |= cli.force_ascii;
         config.force_ansi |= cli.force_ansi;
         config.goto_end |= cli.goto_end;
+
+        if let Some(ref mode) = cli.mirror_scene_numbers {
+            config.mirror_scene_numbers = match mode.as_str() {
+                "export" => MirrorOption::ExportOnly,
+                "off" | "false" => MirrorOption::Off,
+                _ => MirrorOption::Always,
+            };
+        }
 
         if let Some(ref ext) = cli.contd_extension {
             config.contd_extension = ext.clone();

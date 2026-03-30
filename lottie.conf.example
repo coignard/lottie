@@ -12,6 +12,10 @@ set show_scene_numbers
 # Show page numbers on the right side of the screen.
 set show_page_numbers
 
+# Mirror scene numbers to the right margin instead of page numbers.
+# Available values: "always" (editor and export), "export" (export only), "off"
+set mirror_scene_numbers "export"
+
 # Automatically hide Fountain markup when the cursor is not
 # on the current line.
 set hide_markup

@@ -115,6 +115,9 @@ pub fn export_document(
     let mut skipped_comment = false;
     let empty_highlights = std::collections::HashSet::new();
 
+    let mirror_scenes = config.mirror_scene_numbers == crate::config::MirrorOption::Always
+        || config.mirror_scene_numbers == crate::config::MirrorOption::ExportOnly;
+
     for row in layout {
         if matches!(
             row.line_type,
@@ -238,7 +241,13 @@ pub fn export_document(
             }
         }
 
-        if let Some(pnum) = row.page_num {
+        let right_text = if mirror_scenes {
+            row.scene_num.clone()
+        } else {
+            row.page_num.map(|pnum| format!("{}.", pnum))
+        };
+
+        if let Some(r_str) = right_text {
             let target_pos = global_pad + PAGE_WIDTH as usize + gap_size;
             if target_pos > visual_width {
                 line_str.push_str(&" ".repeat(target_pos - visual_width));
@@ -246,11 +255,10 @@ pub fn export_document(
                 line_str.push_str(&" ".repeat(gap_size));
             }
 
-            let p_str = format!("{}.", pnum);
             if with_ansi {
-                line_str.push_str(&format!("\x1b[90m{}\x1b[0m", p_str));
+                line_str.push_str(&format!("\x1b[90m{}\x1b[0m", r_str));
             } else {
-                line_str.push_str(&p_str);
+                line_str.push_str(&r_str);
             }
         }
 
@@ -353,7 +361,8 @@ mod export_tests {
 
     #[test]
     fn test_export_edge_cases() {
-        let config = Config::default();
+        let mut config = Config::default();
+        config.mirror_scene_numbers = crate::config::MirrorOption::Off;
         let lines = vec![
             "INT. ROOM".to_string(),
             "CHAR (V.O.)".to_string(),
@@ -379,11 +388,39 @@ mod export_tests {
     }
 
     #[test]
+    fn test_export_mirrors_scene_numbers() {
+        use crate::config::{Config, MirrorOption};
+        use crate::types::LineType;
+
+        let mut config = Config::default();
+        config.mirror_scene_numbers = MirrorOption::Always;
+
+        let lines = vec!["INT. ROOM - DAY".to_string()];
+        let types = vec![LineType::SceneHeading];
+
+        let mut layout = crate::layout::build_layout(&lines, &types, usize::MAX, &config);
+
+        layout[0].scene_num = Some("42".to_string());
+        layout[0].page_num = Some(69);
+
+        let exported = export_document(&layout, &lines, &config, false);
+
+        assert!(
+            exported.contains("42"),
+            "Mirrored scene number '42' should be present in export"
+        );
+        assert!(
+            !exported.contains("69."),
+            "Page number '69.' should be hidden when mirror_scene_numbers is active"
+        );
+    }
+
+    #[test]
     fn test_export_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.16
+Draft date: Version 0.2.17
 Contact:
 contact@renecoignard.com
 
@@ -478,6 +515,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let mut config = Config::default();
         config.show_page_numbers = true;
         config.show_scene_numbers = true;
+        config.mirror_scene_numbers = crate::config::MirrorOption::Off;
 
         let types = Parser::parse(&lines);
         let layout = build_layout(&lines, &types, usize::MAX, &config);

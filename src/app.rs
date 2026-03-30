@@ -849,6 +849,7 @@ impl App {
             } else if *t == LineType::SceneHeading {
                 let scene = self.lines[i].trim().to_uppercase_1to1();
                 let mut loc_str = scene.as_str();
+                let mut matched = false;
 
                 if loc_str.starts_with('.') && !loc_str.starts_with("..") {
                     loc_str = &loc_str[1..];
@@ -872,8 +873,12 @@ impl App {
                     for p in prefixes {
                         if let Some(rest) = loc_str.strip_prefix(p) {
                             loc_str = rest;
+                            matched = true;
                             break;
                         }
+                    }
+                    if !matched && let Some((_, rest)) = loc_str.split_once(". ") {
+                        loc_str = rest;
                     }
                 }
 
@@ -915,6 +920,7 @@ impl App {
     /// suitable candidate exists or if auto-completion is disabled.
     pub fn update_autocomplete(&mut self) {
         let pending_tab_suggestion = self.suggestion.take();
+        let mut matched = false;
 
         if !self.config.autocomplete {
             return;
@@ -995,8 +1001,12 @@ impl App {
                 for p in prefixes {
                     if let Some(rest) = input.strip_prefix(p) {
                         input = rest;
+                        matched = true;
                         break;
                     }
+                }
+                if !matched && let Some((_, rest)) = input.split_once(". ") {
+                    input = rest;
                 }
             }
 
@@ -1513,6 +1523,8 @@ impl App {
                 let stripped = line.trim_start_matches(['!', '~', '=', '#']);
                 self.lines[self.cursor_y] = stripped.to_string();
                 self.cursor_x = self.cursor_x.saturating_sub(line.len() - stripped.len());
+            } else if line.starts_with('.') {
+                self.lines[self.cursor_y] = line.replacen('.', ">", 1);
             } else if !line.starts_with('@') {
                 let upper_prefix = line.trim_start().to_uppercase_1to1();
                 let mut best_match: Option<&String> = None;
@@ -2225,6 +2237,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         }
     }
 
+    let mirror_scenes = app.config.mirror_scene_numbers == crate::config::MirrorOption::Always;
+
     visible.extend(
         app.layout
             .iter()
@@ -2349,7 +2363,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     spans.push(Span::styled(sug.clone(), sug_style));
                 }
 
-                if let Some(pnum) = row.page_num {
+                let right_text = if mirror_scenes {
+                    row.scene_num.clone()
+                } else {
+                    row.page_num.map(|pnum| format!("{}.", pnum))
+                };
+
+                if let Some(r_str) = right_text {
                     let current_line_width: usize = spans
                         .iter()
                         .map(|s| UnicodeWidthStr::width(s.content.as_ref()))
@@ -2358,7 +2378,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                     let target_pos = global_pad as usize + page_w as usize + gap_size as usize;
                     if target_pos > current_line_width {
                         spans.push(Span::raw(" ".repeat(target_pos - current_line_width)));
-                        spans.push(Span::styled(format!("{}.", pnum), page_num_style));
+                        spans.push(Span::styled(r_str, page_num_style));
                     }
                 }
 
@@ -5158,11 +5178,44 @@ mod app_tests {
     }
 
     #[test]
+    fn test_app_tab_no_infinite_dots_after_non_empty_line() {
+        let mut app = create_empty_app();
+
+        app.lines = vec!["Шарлотта".to_string(), "Яблоко.".to_string()];
+        app.parse_document();
+        app.cursor_y = 1;
+        app.cursor_x = 0;
+
+        app.handle_tab();
+        assert_eq!(app.lines[1], "@Яблоко.");
+        app.parse_document();
+        assert_eq!(app.types[1], LineType::Character);
+
+        app.handle_tab();
+        assert_eq!(app.lines[1], ".Яблоко.");
+        app.parse_document();
+        assert_eq!(app.types[1], LineType::Action);
+
+        app.handle_tab();
+        assert_eq!(
+            app.lines[1], ">Яблоко.",
+            "Must turn into Transition (>), preventing infinite '@.' prepends"
+        );
+        app.parse_document();
+        assert_eq!(app.types[1], LineType::Transition);
+
+        app.handle_tab();
+        assert_eq!(app.lines[1], "Яблоко.");
+        app.parse_document();
+        assert_eq!(app.types[1], LineType::Action);
+    }
+
+    #[test]
     fn test_integration() {
         let tutorial_text = r#"Title: Lottie Tutorial
 Credit: Written by
 Author: René Coignard
-Draft date: Version 0.2.16
+Draft date: Version 0.2.17
 Contact:
 contact@renecoignard.com
 
@@ -5254,6 +5307,7 @@ And Beat itself, of course: https://www.beat-app.fi/
 > FADE OUT"#;
 
         let mut app = App::new(crate::config::Cli::default());
+        app.config.mirror_scene_numbers = crate::config::MirrorOption::Off;
         app.lines = tutorial_text.lines().map(|s| s.to_string()).collect();
         app.cursor_y = 0;
         app.cursor_x = 0;
@@ -5514,7 +5568,7 @@ And Beat itself, of course: https://www.beat-app.fi/
         let reference_render = r#"                      Lottie Tutorial
                       Credit: Written by
                       Author: René Coignard
-                      Draft date: Version 0.2.16
+                      Draft date: Version 0.2.17
                       Contact:
                         contact@renecoignard.com
 

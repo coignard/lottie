@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.17
+
+### Added
+- `mirror_scene_numbers` config option and `--mirror-scene-numbers` CLI flag: scene numbers can now be mirrored to the right margin instead of page numbers (`always`, `export`, `off`); default is `export` (mirror only during export)
+- Cyrillic-style scene headings with dot notation (e.g. `НАТ. МЕСТО. ДЕНЬ`) now recognised as scene headings when the remainder contains ` - `, ` – `, ` — `, or `. `
+- Autocomplete now works for scene headings using non-standard dot notation (e.g. `ИНТ. `, `НАТ. `) by falling back to splitting on `. ` when no known prefix matches
+
+### Fixed
+- Tab cycling on Action lines starting with `.` now correctly advances to `>` (Transition) instead of prepending `@` again, preventing infinite `@.` loops
+- Config path on non-Windows now respects `XDG_CONFIG_HOME` instead of using the platform project directories crate
+
+### Changed
+- Version bump to 0.2.17
+
 ## 0.2.16
 
 ### Added
