@@ -331,10 +331,10 @@ pub struct Config {
     /// Open files with the cursor positioned at the very end of the document.
     pub goto_end: bool,
 
-    /// Set panel foreground color to hexadecimal RGB value.
+    /// Set panel foreground color to comma-separated RGB value.
     pub panel_fg: String,
 
-    /// Set panel background color to hexadecimal RGB value.
+    /// Set panel background color to comma-separated RGB value.
     pub panel_bg: String,
 
     /// Disable all terminal colour output.  Text formatting (bold, italic, underline)
