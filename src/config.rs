@@ -104,6 +104,18 @@ set shot_style "bold"
 
 ## Display & Terminal
 
+# Panel foreground color, if set must be provided as a comma-separated RGB
+# value (e.g. "255, 96, 16" or "255,96,16"). Is not applied if no_color
+# is set. Defaults to reversed foreground color if both panel_fg and
+# panel_bg are not set, otherwise defaults to black.
+unset panel_fg
+
+# Panel background color, if set must be provided as a comma-separated RGB
+# value (e.g. "255, 96, 16" or "255,96,16"). Is not applied if no_color
+# is set. Defaults to reversed background color if both panel_fg and
+# panel_bg are not set, otherwise defaults to white.
+unset panel_bg
+
 # Disable all terminal colors. Lottie will still render bold, italic,
 # and underline modifiers if supported by your terminal. Lottie tries
 # to detect color support automatically.
@@ -319,6 +331,12 @@ pub struct Config {
     /// Open files with the cursor positioned at the very end of the document.
     pub goto_end: bool,
 
+    /// Set panel foreground color to hexadecimal RGB value.
+    pub panel_fg: String,
+
+    /// Set panel background color to hexadecimal RGB value.
+    pub panel_bg: String,
+
     /// Disable all terminal colour output.  Text formatting (bold, italic, underline)
     /// is not affected unless `no_formatting` is also set.
     pub no_color: bool,
@@ -380,6 +398,8 @@ impl Default for Config {
             heading_spacing: 1,
             shot_style: "bold".to_string(),
 
+            panel_fg: String::default(),
+            panel_bg: String::default(),
             no_color: false,
             no_formatting: false,
             force_ascii: false,
@@ -445,6 +465,8 @@ impl Config {
                             }
                         }
                         "shot_style" => self.shot_style = val,
+                        "panel_fg" => self.panel_fg = val,
+                        "panel_bg" => self.panel_bg = val,
                         "no_color" => self.no_color = true,
                         "no_formatting" => self.no_formatting = true,
                         "force_ascii" => self.force_ascii = true,
@@ -469,6 +491,8 @@ impl Config {
                         "break_actions" => self.break_actions = false,
                         "goto_end" => self.goto_end = false,
                         "mirror_scene_numbers" => self.mirror_scene_numbers = MirrorOption::Off,
+                        "panel_fg" => self.panel_fg = String::default(),
+                        "panel_bg" => self.panel_bg = String::default(),
                         "no_color" => self.no_color = false,
                         "no_formatting" => self.no_formatting = false,
                         "force_ascii" => self.force_ascii = false,

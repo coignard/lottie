@@ -2210,7 +2210,65 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         page_num_style.fg = Some(Color::DarkGray);
     }
 
-    let panel_style = Style::default().add_modifier(Modifier::REVERSED);
+    let mut panel_style = Style::default().add_modifier(Modifier::REVERSED);
+
+    if !app.config.no_color {
+        let mut fg_rgb: Option<[u8; 3]> = Some([0, 0, 0]);
+        let mut bg_rgb: Option<[u8; 3]> = Some([255, 255, 255]);
+
+        let fg_rgb_vec: Vec<&str> = app.config.panel_fg.split(",").map(|f| f.trim()).collect();
+        let bg_rgb_vec: Vec<&str> = app.config.panel_bg.split(",").map(|f| f.trim()).collect();
+
+        if fg_rgb_vec.len() == 3 {
+            for (i, component) in fg_rgb_vec.iter().enumerate() {
+                match component.parse() {
+                    Ok(v) => {
+                        let mut tmpfg = fg_rgb.unwrap();
+                        tmpfg[i] = v;
+                        fg_rgb = Some(tmpfg);
+                    }
+                    Err(_) => {
+                        fg_rgb = None;
+                        break;
+                    }
+                };
+            }
+        } else {
+            fg_rgb = None;
+        }
+
+        if bg_rgb_vec.len() == 3 {
+            for (i, component) in bg_rgb_vec.iter().enumerate() {
+                match component.parse() {
+                    Ok(v) => {
+                        let mut tmpbg = bg_rgb.unwrap();
+                        tmpbg[i] = v;
+                        bg_rgb = Some(tmpbg);
+                    }
+                    Err(_) => {
+                        bg_rgb = None;
+                        break;
+                    }
+                };
+            }
+        } else {
+            bg_rgb = None;
+        }
+
+        if fg_rgb.is_some() || bg_rgb.is_some() {
+            panel_style = Style::default();
+
+            panel_style = match fg_rgb {
+                Some(rgb) => panel_style.fg(Color::Rgb(rgb[0], rgb[1], rgb[2])),
+                None => panel_style,
+            };
+
+            panel_style = match bg_rgb {
+                Some(rgb) => panel_style.bg(Color::Rgb(rgb[0], rgb[1], rgb[2])),
+                None => panel_style,
+            };
+        }
+    }
 
     let mut visible: Vec<Line> = Vec::new();
     for _ in 0..pad_top {

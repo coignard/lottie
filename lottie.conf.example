@@ -83,6 +83,18 @@ set shot_style "bold"
 
 ## Display & Terminal
 
+# Panel foreground color, if set must be provided as a comma-separated RGB
+# value (e.g. "255, 96, 16" or "255,96,16"). Is not applied if no_color
+# is set. Defaults to reversed foreground color if both panel_fg and
+# panel_bg are not set, otherwise defaults to black.
+unset panel_fg
+
+# Panel background color, if set must be provided as a comma-separated RGB
+# value (e.g. "255, 96, 16" or "255,96,16"). Is not applied if no_color
+# is set. Defaults to reversed background color if both panel_fg and
+# panel_bg are not set, otherwise defaults to white.
+unset panel_bg
+
 # Disable all terminal colors. Lottie will still render bold, italic,
 # and underline modifiers if supported by your terminal. Lottie tries
 # to detect color support automatically.
