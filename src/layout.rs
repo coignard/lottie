@@ -425,10 +425,10 @@ pub fn build_layout(
                             | LineType::DualDialogueCharacter
                             | LineType::Dialogue
                             | LineType::Parenthetical
-                    )
-                => {
-                    in_dual_dialogue = false;
-                }
+                    ) =>
+            {
+                in_dual_dialogue = false;
+            }
             _ => {}
         }
 
