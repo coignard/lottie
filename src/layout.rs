@@ -35,7 +35,7 @@ static SCENE_NUM_RE: LazyLock<Regex> =
 /// `line_idx`.  The [`char_start`](VisualRow::char_start) /
 /// [`char_end`](VisualRow::char_end) range identifies the slice of the original
 /// logical line that this row covers.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VisualRow {
     /// Index into the `lines` / `types` arrays of the logical line that produced
     /// this row.
@@ -417,7 +417,7 @@ pub fn build_layout(
             | LineType::Lyrics => {
                 in_dual_dialogue = false;
             }
-            LineType::Empty => {
+            LineType::Empty
                 if i > 0
                     && !matches!(
                         types[i - 1],
@@ -426,10 +426,9 @@ pub fn build_layout(
                             | LineType::Dialogue
                             | LineType::Parenthetical
                     )
-                {
+                => {
                     in_dual_dialogue = false;
                 }
-            }
             _ => {}
         }
 

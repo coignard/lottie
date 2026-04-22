@@ -35,7 +35,7 @@ pub const LINES_PER_PAGE: usize = 55;
 ///
 /// Each variant of [`LineType`] owns one `Fmt` constant that describes where
 /// its text begins and how wide it may grow before being word-wrapped.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Fmt {
     /// Left indent in characters, measured from the left edge of the page column.
     pub indent: u16,

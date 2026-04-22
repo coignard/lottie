@@ -40,6 +40,7 @@ static META_KEY_RE: LazyLock<Regex> =
 /// - Forced action (`!`) and shots (`!!`)
 ///
 /// All methods are associated functions; no state is maintained between calls.
+#[derive(Debug)]
 pub struct Parser;
 
 impl Parser {

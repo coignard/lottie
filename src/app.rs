@@ -36,7 +36,7 @@ use crate::{
     types::{LineType, PAGE_WIDTH, base_style},
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// A snapshot of the document and cursor position for undo/redo.
 pub struct HistoryState {
     /// The complete set of logical lines at the time the snapshot was taken.
@@ -49,7 +49,7 @@ pub struct HistoryState {
     pub cursor_x: usize,
 }
 
-#[derive(PartialEq, Clone, Default)]
+#[derive(PartialEq, Clone, Default, Debug)]
 /// Categorises the most recent editing operation to decide whether to coalesce
 /// the next operation into the same undo entry.
 pub enum LastEdit {
@@ -93,7 +93,7 @@ pub enum AppMode {
 /// When the user switches between open files, the current buffer's state is
 /// serialised into this struct and stored in [`App::buffers`], then the
 /// incoming buffer's `BufferState` is swapped into the live `App` fields.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct BufferState {
     /// The logical lines of the document.
     pub lines: Vec<String>,
@@ -148,6 +148,7 @@ pub struct BufferState {
 /// `cursor_y`, etc.) for ergonomic access, and stores inactive buffers in
 /// [`buffers`](App::buffers).  Switching buffers is done via
 /// [`swap_buffer`](App::swap_buffer).
+#[derive(Debug)]
 pub struct App {
     /// The active runtime configuration.
     pub config: Config,

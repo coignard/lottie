@@ -37,6 +37,7 @@
 //! ```
 
 #![warn(missing_docs)]
+#![warn(missing_debug_implementations)]
 
 /// The interactive TUI editor application, event loop, and rendering logic.
 pub mod app;

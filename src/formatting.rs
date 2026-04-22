@@ -81,7 +81,7 @@ pub fn has_markup_bytes(text: &str) -> bool {
 /// layout engine stores one `LineFormatting` per [`crate::layout::VisualRow`]
 /// so that [`render_inline`] can reconstruct the correct spans even
 /// after word-wrapping.
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct LineFormatting {
     /// Indices of characters that should be rendered in **bold** (`**text**` or `***text***`).
     pub bold: HashSet<usize>,
