@@ -220,18 +220,6 @@ cargo test
 
 Lottie is a [Fountain](https://github.com/nyousefi/Fountain) screenplay editor, a port of [Beat](https://github.com/lmparppei/beat), built with [ratatui](https://github.com/ratatui/ratatui).
 
-## Sponsors
-
-Hosting provided by <a href="https://cloud9.sh/">Cloud9</a>
-
-<a href="https://cloud9.sh/">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo-dark.svg?raw=true">
-    <source media="(prefers-color-scheme: light)" srcset="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true">
-    <img src="https://github.com/cloud9-hq/assets/blob/main/logos/logo.svg?raw=true" alt="Cloud9 Logo" height="38">
-  </picture>
-</a>
-
 ## License
 
 © 2026 René Coignard.
