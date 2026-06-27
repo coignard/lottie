@@ -222,8 +222,8 @@ Lottie is a [Fountain](https://github.com/nyousefi/Fountain) screenplay editor, 
 
 ## License
 
-© 2026 René Coignard.
-
 <img src="assets/gplv3.svg" height="70" align="right">
+
+© 2026 René Coignard.
 
 All code is licensed under the GPL, v3 or later. See [LICENSE](LICENSE) file for details.
